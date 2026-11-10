@@ -1,0 +1,56 @@
+#!/bin/bash
+# ==============================================================================
+# PBS / PBS Pro / OpenPBS / Torque Batch Job Specification for YoYo
+#
+# DISCLAIMER & SAFETY NOTICE:
+# YoYo executes autonomously and can make mistakes. Always run batch jobs
+# against copies of your workspace and maintain verified backups of critical data.
+# ==============================================================================
+# Directives for PBS Pro & OpenPBS
+#PBS -N yoyo_ai
+#PBS -l select=1:ncpus=4:mem=8gb
+#PBS -l walltime=01:00:00
+#PBS -q workq
+#PBS -j oe
+#PBS -o yoyo_%J.log
+#PBS -V
+
+set -euo pipefail
+
+# Ensure working directory is set to PBS submission directory
+if [ -n "${PBS_O_WORKDIR:-}" ]; then
+    cd "${PBS_O_WORKDIR}"
+    echo "Switched to PBS working directory: ${PBS_O_WORKDIR}"
+fi
+
+CLEAN_JOBID="${PBS_JOBID:-local_pbs_run}"
+# Strip hostname suffix if present in PBS job ID (e.g. 12345.master -> 12345)
+CLEAN_JOBID="${CLEAN_JOBID%%.*}"
+
+echo "========================================================================"
+echo "Starting YoYo Agent Job on Host: $(hostname)"
+echo "PBS Job ID      : ${PBS_JOBID:-unknown}"
+echo "PBS Queue       : ${PBS_QUEUE:-default}"
+echo "Current Time    : $(date -u)"
+echo "Working Dir     : $(pwd)"
+echo "========================================================================"
+
+# Set non-interactive environment variables
+export DEBIAN_FRONTEND=noninteractive
+export PYTHONUNBUFFERED=1
+export CI=true
+
+# Launch the autonomous agent with full sandboxing and audit trail
+python3 -m batch_agent.cli \
+    --goal "Autonomously execute batch pipeline, run verification checks, and record audit trail" \
+    --workspace "$(pwd)" \
+    --sandbox-profile strict \
+    --log-file "yoyo_audit_pbs_${CLEAN_JOBID}.txt"
+
+EXIT_STATUS=$?
+echo "========================================================================"
+echo "YoYo Completed with Exit Code: ${EXIT_STATUS}"
+echo "Audit Trail written to: yoyo_audit_pbs_${CLEAN_JOBID}.txt"
+echo "========================================================================"
+
+exit ${EXIT_STATUS}

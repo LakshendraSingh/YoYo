@@ -1,0 +1,30 @@
+{
+  "job_id": "batch-local-weights-003",
+  "goal": "Inspect AST symbols and verify tests using direct model weights",
+  "associated_files": [
+    "src/calculator.py",
+    "tests/test_calculator.py"
+  ],
+  "workspace_root": "./examples/sample_workspace",
+  "max_steps": 10,
+  "job_timeout_seconds": 600,
+  "provider": "local_weights",
+  "model_weights_path": "/models/llama-3-8b-instruct.Q4_K_M.gguf",
+  "device": "auto",
+  "gpu_layers": -1,
+  "context_window": 4096,
+  "sandbox": {
+    "enabled": true,
+    "profile": "workspace"
+  },
+  "process": {
+    "default_timeout_seconds": 30,
+    "enforce_non_interactive_stdin": true
+  },
+  "audit": {
+    "log_file_path": "batch_audit_local_weights.txt",
+    "flush_immediately": true,
+    "record_active_processes_snapshot": true
+  }
+}
+

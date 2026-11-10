@@ -1,0 +1,26 @@
+{
+  "job_id": "batch-code-fix-002",
+  "goal": "Verify unit tests in workspace and repair any broken assertions",
+  "associated_files": [
+    "src/calculator.py",
+    "tests/test_calculator.py"
+  ],
+  "workspace_root": "./examples/sample_workspace",
+  "max_steps": 12,
+  "job_timeout_seconds": 900,
+  "provider": "heuristic",
+  "sandbox": {
+    "enabled": true,
+    "profile": "strict"
+  },
+  "process": {
+    "default_timeout_seconds": 45,
+    "enforce_non_interactive_stdin": true
+  },
+  "audit": {
+    "log_file_path": "batch_audit_code_fix.txt",
+    "flush_immediately": true,
+    "record_active_processes_snapshot": true
+  }
+}
+

@@ -1,0 +1,26 @@
+{
+  "job_id": "batch-pipeline-001",
+  "goal": "Process telemetry log records, calculate aggregate statistics, and generate report",
+  "associated_files": [
+    "data/telemetry.csv",
+    "scripts/process_telemetry.py"
+  ],
+  "workspace_root": "./examples/sample_workspace",
+  "max_steps": 10,
+  "job_timeout_seconds": 600,
+  "provider": "heuristic",
+  "sandbox": {
+    "enabled": true,
+    "profile": "workspace"
+  },
+  "process": {
+    "default_timeout_seconds": 30,
+    "enforce_non_interactive_stdin": true
+  },
+  "audit": {
+    "log_file_path": "batch_audit_pipeline.txt",
+    "flush_immediately": true,
+    "record_active_processes_snapshot": true
+  }
+}
+

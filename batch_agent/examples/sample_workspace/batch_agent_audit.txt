@@ -1,0 +1,399 @@
+
+=============== YOYO - AUDIT TRAIL [JOB: batch-20261110-190426] ================
+Job ID             : batch-20261110-190426
+Execution Mode     : NON-INTERACTIVE BATCH OS ENVIRONMENT
+Start Timestamp    : 2026-11-10T19:04:26.536760+00:00
+Workspace Root     : /Users/lakshendra_singh/Code/YoYo/batch_agent/examples/sample_workspace
+Audit Log File     : /Users/lakshendra_singh/Code/YoYo/batch_agent/examples/sample_workspace/batch_agent_audit.txt
+Sandbox Boundary   : ENFORCED (Profile: STRICT)
+Intelligence Model : heuristic
+Goal Specification : Run code verification and write report
+Associated Files   : [None provided]
+Max Allowed Steps  : 25
+==========================================================================================
+
+--- [2026-11-10T19:04:26.536887+00:00] [JOB_START] ---------------------------------------
+Title       : Batch Job Ingestion & Environment Initialization
+Description : Ingested goal and associated files into non-interactive batch sandbox.
+  job_id          : batch-20261110-190426
+  goal            : Run code verification and write report
+  associated_files: []
+  sandbox_profile : strict
+  provider        : heuristic
+
+--- [2026-11-10T19:04:26.537024+00:00] [CHAIN_OF_THOUGHT] [STEP 1] -----------------------
+Title       : Autonomous Reasoning (Inspection)
+  phase           : INSPECTION
+
+[REASONING / CHAIN OF THOUGHT]
+  Phase: INSPECTION
+
+  Goal Assessment   : Discover workspace structure.
+  Observation State : Associated files inspected. Checking directory tree.
+  Optimal Decision  : Invoke file_list to survey workspace.
+  Expected Outcome  : Action advances execution plan towards goal completion.
+
+  Current Plan:
+  [>] Step 1: Scan Workspace Structure (IN_PROGRESS)
+  [ ] Step 2: Baseline Verification (PENDING)
+  [ ] Step 3: Execute Primary Objective (PENDING)
+  [ ] Step 4: Comprehensive Self-Verification (PENDING)
+  [ ] Step 5: Generate Batch Summary Artifact (PENDING)
+
+  Optimal Decision Taken:
+  Invoke file_list to survey workspace.
+
+--- [2026-11-10T19:04:26.537970+00:00] [TOOL_INVOCATION] [STEP 1] ------------------------
+Title       : Tool Execution: file_list
+Description : Invoked tool 'file_list' (Sandbox: PASSED).
+  tool            : file_list
+  parameters      :
+    * recursive: False
+  sandbox_status  : ALLOW
+  result_summary  : batch_agent_audit.txt
+batch_audit_pipeline.txt
+batch_summary.md
+data/
+scripts/
+src/
+tests/
+  error           : None
+
+--- [2026-11-10T19:04:26.538078+00:00] [CHAIN_OF_THOUGHT] [STEP 2] -----------------------
+Title       : Autonomous Reasoning (Verification)
+  phase           : VERIFICATION
+
+[REASONING / CHAIN OF THOUGHT]
+  Phase: VERIFICATION
+
+  Goal Assessment   : Verify codebase stability and test suite status non-interactively.
+  Observation State : Current step is verification: Baseline Verification
+  Optimal Decision  : Run code verification check.
+  Expected Outcome  : Confirm syntax correctness and test assertions.
+
+  Current Plan:
+  [x] Step 1: Scan Workspace Structure (COMPLETED)
+  [>] Step 2: Baseline Verification (IN_PROGRESS)
+  [ ] Step 3: Execute Primary Objective (PENDING)
+  [ ] Step 4: Comprehensive Self-Verification (PENDING)
+  [ ] Step 5: Generate Batch Summary Artifact (PENDING)
+
+  Optimal Decision Taken:
+  Run code verification check.
+
+--- [2026-11-10T19:04:26.541567+00:00] [PROCESS_EVENT] -----------------------------------
+Title       : Process Lifecycle: SPAWNED (PID 49109)
+Description : Spawned PID 49109 in /Users/lakshendra_singh/Code/YoYo/batch_agent/examples/sample_workspace (Timeout: 60s)
+  action          : SPAWNED
+  pid             : 49109
+  command         : python3 -m unittest discover -s tests
+
+Active Subprocesses Snapshot:
+  PID      STATUS       DURATION   COMMAND
+  ------   ----------   --------   ----------------------------------------
+  49109    RUNNING      0.00s      python3 -m unittest discover -s tests
+
+--- [2026-11-10T19:04:26.617545+00:00] [COMMAND_EXECUTION] [STEP 2] ----------------------
+Title       : Shell Execution: python3 -m unittest discover -s tests...
+Description : Command executed in /Users/lakshendra_singh/Code/YoYo/batch_agent/examples/sample_workspace (Exit: 0).
+  working_directory: /Users/lakshendra_singh/Code/YoYo/batch_agent/examples/sample_workspace
+  sanitized_env_keys_stripped:
+    - ANTIGRAVITY_CSRF_TOKEN
+
+Command     : python3 -m unittest discover -s tests
+Exit Code   : 0
+Duration    : 0.079s
+Stderr Output:
+  ! .....
+  ! ----------------------------------------------------------------------
+  ! Ran 5 tests in 0.000s
+
+  ! OK
+
+Active Subprocesses Snapshot:
+  [No active background child processes]
+
+--- [2026-11-10T19:04:26.618019+00:00] [VERIFICATION] [STEP 2] ---------------------------
+Title       : Verification Check: Unit Test Suite (tests) -> PASS
+Description : Test run outcome: PASSED.
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.000s
+
+OK
+  verification    : Unit Test Suite (tests)
+  passed          : True
+
+--- [2026-11-10T19:04:26.618118+00:00] [TOOL_INVOCATION] [STEP 2] ------------------------
+Title       : Tool Execution: verify_code
+Description : Invoked tool 'verify_code' (Sandbox: PASSED).
+  tool            : verify_code
+  parameters      :
+    * mode: unittest
+    * target: tests
+  sandbox_status  : ALLOW
+  result_summary  : Test suite execution PASSED.
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.000s
+
+OK
+  error           : None
+
+--- [2026-11-10T19:04:26.618277+00:00] [CHAIN_OF_THOUGHT] [STEP 3] -----------------------
+Title       : Autonomous Reasoning (Execution)
+  phase           : EXECUTION
+
+[REASONING / CHAIN OF THOUGHT]
+  Phase: EXECUTION
+
+  Goal Assessment   : Execute action for subgoal: Execute Primary Objective
+  Observation State : Proceeding with planned step 3.
+  Optimal Decision  : Execute non-interactive command.
+  Expected Outcome  : Action advances execution plan towards goal completion.
+
+  Current Plan:
+  [x] Step 1: Scan Workspace Structure (COMPLETED)
+  [x] Step 2: Baseline Verification (COMPLETED)
+  [>] Step 3: Execute Primary Objective (IN_PROGRESS)
+  [ ] Step 4: Comprehensive Self-Verification (PENDING)
+  [ ] Step 5: Generate Batch Summary Artifact (PENDING)
+
+  Optimal Decision Taken:
+  Execute non-interactive command.
+
+--- [2026-11-10T19:04:26.620840+00:00] [PROCESS_EVENT] -----------------------------------
+Title       : Process Lifecycle: SPAWNED (PID 49110)
+Description : Spawned PID 49110 in /Users/lakshendra_singh/Code/YoYo/batch_agent/examples/sample_workspace (Timeout: 60s)
+  action          : SPAWNED
+  pid             : 49110
+  command         : python3 -m unittest discover tests || true
+
+Active Subprocesses Snapshot:
+  PID      STATUS       DURATION   COMMAND
+  ------   ----------   --------   ----------------------------------------
+  49110    RUNNING      0.00s      python3 -m unittest discover tests || true
+
+--- [2026-11-10T19:04:26.696322+00:00] [COMMAND_EXECUTION] [STEP 3] ----------------------
+Title       : Shell Execution: python3 -m unittest discover tests || tr...
+Description : Command executed in /Users/lakshendra_singh/Code/YoYo/batch_agent/examples/sample_workspace (Exit: 0).
+  working_directory: /Users/lakshendra_singh/Code/YoYo/batch_agent/examples/sample_workspace
+  sanitized_env_keys_stripped:
+    - ANTIGRAVITY_CSRF_TOKEN
+
+Command     : python3 -m unittest discover tests || true
+Exit Code   : 0
+Duration    : 0.078s
+Stderr Output:
+  ! .....
+  ! ----------------------------------------------------------------------
+  ! Ran 5 tests in 0.000s
+
+  ! OK
+
+Active Subprocesses Snapshot:
+  [No active background child processes]
+
+--- [2026-11-10T19:04:26.696774+00:00] [TOOL_INVOCATION] [STEP 3] ------------------------
+Title       : Tool Execution: run_command
+Description : Invoked tool 'run_command' (Sandbox: PASSED).
+  tool            : run_command
+  parameters      :
+    * command: python3 -m unittest discover tests || true
+  sandbox_status  : ALLOW
+  result_summary  : Exit Code: 0 (Duration: 0.08s)
+[Active Background Processes: 0]
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.000s
+
+OK
+
+  error           : None
+
+--- [2026-11-10T19:04:26.696899+00:00] [CHECKPOINT] [STEP 3] -----------------------------
+Title       : Execution Checkpoint State
+Description : Completed 3 subgoals, 2 remaining.
+  completed_subgoals:
+    - Scan Workspace Structure
+    - Baseline Verification
+    - Execute Primary Objective
+  remaining_subgoals:
+    - Comprehensive Self-Verification
+    - Generate Batch Summary Artifact
+
+Active Subprocesses Snapshot:
+  [No active background child processes]
+
+--- [2026-11-10T19:04:26.697065+00:00] [CHAIN_OF_THOUGHT] [STEP 4] -----------------------
+Title       : Autonomous Reasoning (Verification)
+  phase           : VERIFICATION
+
+[REASONING / CHAIN OF THOUGHT]
+  Phase: VERIFICATION
+
+  Goal Assessment   : Verify codebase stability and test suite status non-interactively.
+  Observation State : Current step is verification: Comprehensive Self-Verification
+  Optimal Decision  : Run code verification check.
+  Expected Outcome  : Confirm syntax correctness and test assertions.
+
+  Current Plan:
+  [x] Step 1: Scan Workspace Structure (COMPLETED)
+  [x] Step 2: Baseline Verification (COMPLETED)
+  [x] Step 3: Execute Primary Objective (COMPLETED)
+  [>] Step 4: Comprehensive Self-Verification (IN_PROGRESS)
+  [ ] Step 5: Generate Batch Summary Artifact (PENDING)
+
+  Optimal Decision Taken:
+  Run code verification check.
+
+--- [2026-11-10T19:04:26.699561+00:00] [PROCESS_EVENT] -----------------------------------
+Title       : Process Lifecycle: SPAWNED (PID 49112)
+Description : Spawned PID 49112 in /Users/lakshendra_singh/Code/YoYo/batch_agent/examples/sample_workspace (Timeout: 60s)
+  action          : SPAWNED
+  pid             : 49112
+  command         : python3 -m unittest discover -s tests
+
+Active Subprocesses Snapshot:
+  PID      STATUS       DURATION   COMMAND
+  ------   ----------   --------   ----------------------------------------
+  49112    RUNNING      0.00s      python3 -m unittest discover -s tests
+
+--- [2026-11-10T19:04:26.771985+00:00] [COMMAND_EXECUTION] [STEP 4] ----------------------
+Title       : Shell Execution: python3 -m unittest discover -s tests...
+Description : Command executed in /Users/lakshendra_singh/Code/YoYo/batch_agent/examples/sample_workspace (Exit: 0).
+  working_directory: /Users/lakshendra_singh/Code/YoYo/batch_agent/examples/sample_workspace
+  sanitized_env_keys_stripped:
+    - ANTIGRAVITY_CSRF_TOKEN
+
+Command     : python3 -m unittest discover -s tests
+Exit Code   : 0
+Duration    : 0.075s
+Stderr Output:
+  ! .....
+  ! ----------------------------------------------------------------------
+  ! Ran 5 tests in 0.000s
+
+  ! OK
+
+Active Subprocesses Snapshot:
+  [No active background child processes]
+
+--- [2026-11-10T19:04:26.772447+00:00] [VERIFICATION] [STEP 4] ---------------------------
+Title       : Verification Check: Unit Test Suite (tests) -> PASS
+Description : Test run outcome: PASSED.
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.000s
+
+OK
+  verification    : Unit Test Suite (tests)
+  passed          : True
+
+--- [2026-11-10T19:04:26.772552+00:00] [TOOL_INVOCATION] [STEP 4] ------------------------
+Title       : Tool Execution: verify_code
+Description : Invoked tool 'verify_code' (Sandbox: PASSED).
+  tool            : verify_code
+  parameters      :
+    * mode: unittest
+    * target: tests
+  sandbox_status  : ALLOW
+  result_summary  : Test suite execution PASSED.
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.000s
+
+OK
+  error           : None
+
+--- [2026-11-10T19:04:26.772703+00:00] [CHAIN_OF_THOUGHT] [STEP 5] -----------------------
+Title       : Autonomous Reasoning (Reporting)
+  phase           : REPORTING
+
+[REASONING / CHAIN OF THOUGHT]
+  Phase: REPORTING
+
+  Goal Assessment   : Persist final batch execution report to workspace.
+  Observation State : All operational subgoals executed. Writing batch summary artifact.
+  Optimal Decision  : Invoke file_write to generate 'batch_summary.md'.
+  Expected Outcome  : Artifact written to workspace root.
+
+  Current Plan:
+  [x] Step 1: Scan Workspace Structure (COMPLETED)
+  [x] Step 2: Baseline Verification (COMPLETED)
+  [x] Step 3: Execute Primary Objective (COMPLETED)
+  [x] Step 4: Comprehensive Self-Verification (COMPLETED)
+  [>] Step 5: Generate Batch Summary Artifact (IN_PROGRESS)
+
+  Optimal Decision Taken:
+  Invoke file_write to generate 'batch_summary.md'.
+
+--- [2026-11-10T19:04:26.773704+00:00] [TOOL_INVOCATION] [STEP 5] ------------------------
+Title       : Tool Execution: file_write
+Description : Invoked tool 'file_write' (Sandbox: PASSED).
+  tool            : file_write
+  parameters      :
+    * path: batch_summary.md
+    * content: # Batch Execution Completion Report
+
+- **Job ID**: 
+- **Goal**: Run code verification and write report
+- **Status**: COMPLETED
+- **Total Steps**: 5
+
+## Subgoals Executed:
+[x] Step 1: Scan Workspace Structure (COMPLETED)
+[x] Step 2: Baseline Verification (COMPLETED)
+[x] Step 3: Execute Primary Objective (COMPLETED)
+[x] Step 4: Comprehensive Self-Verification (COMPLETED)
+[>] Step 5: Generate Batch Summary Artifact (IN_PROGRESS)
+
+  sandbox_status  : ALLOW
+  result_summary  : Successfully wrote 430 bytes (13 lines) to 'batch_summary.md'.
+  error           : None
+
+--- [2026-11-10T19:04:26.773813+00:00] [CHAIN_OF_THOUGHT] [STEP 6] -----------------------
+Title       : Autonomous Reasoning (Finalization)
+  phase           : FINALIZATION
+
+[REASONING / CHAIN OF THOUGHT]
+  Phase: FINALIZATION
+
+  Goal Assessment   : All 5 planned subgoals successfully completed.
+  Observation State : Workspace verified. Latest observation: Successfully wrote 430 bytes (13 lines) to 'batch_summary.md'.
+  Optimal Decision  : Mark batch job as completed successfully.
+  Expected Outcome  : Graceful batch job completion with zero exit code.
+
+  Current Plan:
+  [x] Step 1: Scan Workspace Structure (COMPLETED)
+  [x] Step 2: Baseline Verification (COMPLETED)
+  [x] Step 3: Execute Primary Objective (COMPLETED)
+  [x] Step 4: Comprehensive Self-Verification (COMPLETED)
+  [x] Step 5: Generate Batch Summary Artifact (COMPLETED)
+
+  Optimal Decision Taken:
+  Mark batch job as completed successfully.
+
+--- [2026-11-10T19:04:26.774029+00:00] [JOB_COMPLETION] ----------------------------------
+Title       : Batch Job Finished: SUCCESS
+Description : YoYo successfully completed goal: 'Run code verification and write report' across 6 steps.
+  status          : SUCCESS
+  total_steps     : 6
+  total_runtime_seconds: 0.2371830940246582
+  artifacts       :
+    - batch_audit_pipeline.txt
+    - batch_summary.md
+
+Active Subprocesses Snapshot:
+  [No active background child processes]
+
+
+========================== AUDIT TRAIL COMPLETE - FINAL SUMMARY ==========================
+Final Job Status   : SUCCESS
+Total Steps Taken  : 6
+Total Job Runtime  : 0.24 seconds
+Produced Artifacts : batch_audit_pipeline.txt, batch_summary.md
+Summary            : YoYo successfully completed goal: 'Run code verification and write report' across 6 steps.
+Active Subprocesses: 0 remaining (Cleaned up by YoYo)
+==========================================================================================
+
