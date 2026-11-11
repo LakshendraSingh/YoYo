@@ -13,6 +13,7 @@ import os
 import sys
 import tempfile
 import time
+from typing import Optional
 
 # Ensure batch_agent is in python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -84,9 +85,14 @@ def generate_megarepo(workspace: str, num_files: int = 1000) -> str:
     return "tests/test_analytics.py"
 
 
-def run_benchmark(num_files: int, provider_name: str = "heuristic") -> int:
-    tmp_dir = tempfile.TemporaryDirectory()
-    ws = os.path.realpath(tmp_dir.name)
+def run_benchmark(num_files: int, provider_name: str = "heuristic", custom_workspace: Optional[str] = None, keep_workspace: bool = False) -> int:
+    if custom_workspace:
+        ws = os.path.abspath(custom_workspace)
+        os.makedirs(ws, exist_ok=True)
+        tmp_dir = None
+    else:
+        tmp_dir = tempfile.TemporaryDirectory()
+        ws = os.path.realpath(tmp_dir.name)
     txt_log = os.path.join(ws, "stress_audit.txt")
     csv_log = os.path.join(ws, "stress_audit.csv")
 
@@ -151,16 +157,21 @@ def run_benchmark(num_files: int, provider_name: str = "heuristic") -> int:
         return exit_code
 
     finally:
-        tmp_dir.cleanup()
+        if tmp_dir and not keep_workspace:
+            tmp_dir.cleanup()
+        elif tmp_dir and keep_workspace:
+            print(f"Preserved temporary workspace at: {ws}")
 
 
 def main():
     parser = argparse.ArgumentParser(description="YoYo Large Codebase Stress-Test Benchmark")
     parser.add_argument("--files", "-n", type=int, default=1000, help="Number of files to generate (e.g. 1000, 5000, 10000)")
     parser.add_argument("--provider", type=str, default="heuristic", choices=["heuristic", "gemini", "openai", "local_weights"])
+    parser.add_argument("--workspace", "-w", type=str, default=None, help="Custom directory path to generate files in")
+    parser.add_argument("--keep", action="store_true", help="Preserve generated workspace files on disk after benchmark")
     args = parser.parse_args()
 
-    sys.exit(run_benchmark(num_files=args.files, provider_name=args.provider))
+    sys.exit(run_benchmark(num_files=args.files, provider_name=args.provider, custom_workspace=args.workspace, keep_workspace=args.keep))
 
 
 if __name__ == "__main__":
