@@ -365,9 +365,9 @@ class HeuristicAutonomousProvider(BaseProvider):
 class GeminiProvider(BaseProvider):
     """Zero-dependency HTTP client for Google Gemini LLM API."""
 
-    def __init__(self, api_key: Optional[str] = None, model: str = "gemini-3.1-flash-lite") -> None:
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None) -> None:
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
-        self.model = model
+        self.model = model or os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
         self.fallback = HeuristicAutonomousProvider()
 
     def decide_next_step(
@@ -405,6 +405,12 @@ class GeminiProvider(BaseProvider):
             f"- update_plan: Mutate execution plan (params: {{'action': 'add_step'|'remove_step'|'replan', ...}})\n\n"
             f"COMPLETION INSTRUCTION:\n"
             f"When the primary goal is completely accomplished and verified, set 'is_finish': true, 'tool_name': null, and 'finish_summary': 'Detailed accomplishment description'.\n\n"
+            f"OPERATIONAL GUIDELINES:\n"
+            f"- To run tests, use 'verify_test' with {{'test_file': 'tests/...'}} or 'run_command' with {{'command': 'python3 -m unittest tests/...'}}.\n"
+            f"- If a test fails, read the test file with 'file_read' to inspect the imported functions and assertions.\n"
+            f"- To locate where a function or symbol is defined across a large codebase, use 'file_search' with {{'pattern': 'def function_name'}}.\n"
+            f"- When you locate the defect, use 'file_edit' with {{'path': '...', 'target': '...', 'replacement': '...'}} to patch it.\n"
+            f"- Always re-run tests after patching to confirm they pass. Once tests pass, finish the job with 'is_finish': true.\n\n"
             f"Respond with a JSON object conforming strictly to:\n"
             f'{{"phase": "PLANNING|ACTING|REFLECTING|VERIFYING|MUTATION", "reasoning": "...", "tradeoffs": "...", "decision": "...", "tool_name": "run_command"|null, "tool_params": {{"command": "..."}}, "is_finish": false, "finish_summary": ""}}'
         )

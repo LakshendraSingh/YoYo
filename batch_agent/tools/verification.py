@@ -32,8 +32,18 @@ class VerifyCodeTool(BaseTool):
     }
 
     def run(self, params: Dict[str, Any], context: ToolContext) -> ToolResult:
-        mode = params.get("mode", "syntax")
-        target = params.get("target", "")
+        target = params.get("target") or params.get("test_file") or params.get("file") or params.get("path") or ""
+        command = params.get("command", "")
+        mode = params.get("mode")
+
+        if command:
+            mode = "custom_command"
+            target = command
+        elif not mode:
+            if target and ("test" in target.lower() or os.path.isdir(os.path.join(context.cwd, target))):
+                mode = "unittest"
+            else:
+                mode = "syntax" if target else "unittest"
 
         if mode == "syntax":
             if not target:

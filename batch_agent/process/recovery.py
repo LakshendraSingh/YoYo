@@ -116,6 +116,17 @@ class CommandRecoveryEngine:
 
         logger.info("Attempting autonomous recovery for failed command [%s]: %s", category.value, diagnosis)
 
+        # Do not intercept test assertion failures; they provide legitimate testing feedback to the LLM agent.
+        if category == FailureCategory.ASSERTION_OR_TEST_FAILURE:
+            return RecoveryAttempt(
+                original_command=command,
+                failure_category=category,
+                diagnosis=diagnosis,
+                strategy_applied="None (test assertion failure is diagnostic feedback for agent)",
+                repaired_command=None,
+                success=False,
+            )
+
         # -------------------------------------------------------------
         # Strategy A: Command Not Found (Substitute Alternate Binaries)
         # -------------------------------------------------------------
@@ -129,7 +140,12 @@ class CommandRecoveryEngine:
             elif binary == "pip":
                 repaired_cmd = f"{sys.executable} -m pip " + " ".join(tokens[1:])
             elif binary == "pytest":
-                repaired_cmd = f"{sys.executable} -m unittest discover " + " ".join(tokens[1:])
+                target_args = tokens[1:]
+                has_file = any(t.endswith(".py") for t in target_args)
+                if has_file or not target_args:
+                    repaired_cmd = f"{sys.executable} -m unittest " + " ".join(target_args)
+                else:
+                    repaired_cmd = f"{sys.executable} -m unittest discover " + " ".join(target_args)
 
             if repaired_cmd:
                 new_res = runner.run(repaired_cmd, cwd=context.cwd, step_number=step_number)

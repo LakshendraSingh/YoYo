@@ -37,7 +37,28 @@ class FileReadTool(BaseTool):
 
         abs_path = os.path.abspath(os.path.join(context.cwd, path)) if not os.path.isabs(path) else path
         if not os.path.exists(abs_path):
-            return ToolResult(success=False, error=f"File not found: {path}")
+            basename = os.path.basename(path)
+            stem = os.path.splitext(basename)[0]
+            candidates = []
+            for root, _, files in os.walk(context.workspace_root):
+                for f in files:
+                    f_stem = os.path.splitext(f)[0]
+                    if f == basename or stem == f_stem or (stem in f_stem and f.endswith(".py")):
+                        candidates.append(os.path.relpath(os.path.join(root, f), context.cwd))
+            if len(candidates) > 1 and "test" not in os.path.basename(path).lower():
+                non_tests = [c for c in candidates if "test" not in os.path.basename(c).lower()]
+                if len(non_tests) == 1:
+                    candidates = non_tests
+            if len(candidates) == 1:
+                path = candidates[0]
+                abs_path = os.path.abspath(os.path.join(context.cwd, path))
+            elif candidates:
+                return ToolResult(
+                    success=False,
+                    error=f"File '{path}' not found at specified path. Did you mean: {candidates[:3]}?",
+                )
+            else:
+                return ToolResult(success=False, error=f"File not found: {path}")
 
         try:
             with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
@@ -128,7 +149,42 @@ class FileEditTool(BaseTool):
 
         abs_path = os.path.abspath(os.path.join(context.cwd, path)) if not os.path.isabs(path) else path
         if not os.path.exists(abs_path):
-            return ToolResult(success=False, error=f"Target file does not exist: {path}")
+            # Attempt autonomous workspace search for shifted or basename-only path
+            basename = os.path.basename(path)
+            stem = os.path.splitext(basename)[0]
+            candidates = []
+            for root, _, files in os.walk(context.workspace_root):
+                for f in files:
+                    f_stem = os.path.splitext(f)[0]
+                    if f == basename or stem == f_stem or (stem in f_stem and f.endswith(".py")):
+                        candidates.append(os.path.relpath(os.path.join(root, f), context.cwd))
+            if len(candidates) > 1 and target:
+                containing_target = []
+                for c in candidates:
+                    cand_abs = os.path.abspath(os.path.join(context.cwd, c))
+                    try:
+                        with open(cand_abs, "r", encoding="utf-8") as tf:
+                            if target.strip() in tf.read():
+                                containing_target.append(c)
+                    except Exception:
+                        pass
+                if len(containing_target) == 1:
+                    candidates = containing_target
+                elif not containing_target and "test" not in os.path.basename(path).lower():
+                    non_tests = [c for c in candidates if "test" not in os.path.basename(c).lower()]
+                    if len(non_tests) == 1:
+                        candidates = non_tests
+
+            if len(candidates) == 1:
+                path = candidates[0]
+                abs_path = os.path.abspath(os.path.join(context.cwd, path))
+            elif candidates:
+                return ToolResult(
+                    success=False,
+                    error=f"Target file '{path}' not found at specified path. Did you mean: {candidates[:3]}?",
+                )
+            else:
+                return ToolResult(success=False, error=f"Target file does not exist: {path}")
 
         try:
             with open(abs_path, "r", encoding="utf-8") as f:
@@ -258,10 +314,16 @@ class FileListTool(BaseTool):
                         suffix = "/" if os.path.isdir(full_entry) else ""
                         entries.append(entry + suffix)
 
+            total_count = len(entries)
+            if total_count > 100:
+                output_str = "\n".join(entries[:100]) + f"\n... [Truncated: {total_count - 100} additional files omitted. Use 'file_search' to pinpoint specific symbols or modules]"
+            else:
+                output_str = "\n".join(entries) if entries else "[Directory is empty]"
+
             return ToolResult(
                 success=True,
-                output="\n".join(entries) if entries else "[Directory is empty]",
-                metadata={"count": len(entries), "path": abs_path},
+                output=output_str,
+                metadata={"count": total_count, "path": abs_path, "truncated": total_count > 100},
             )
         except Exception as e:
             return ToolResult(success=False, error=f"Failed to list directory: {e}")
