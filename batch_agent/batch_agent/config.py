@@ -128,6 +128,7 @@ class ProcessConfig:
     base_env: Dict[str, str] = field(default_factory=lambda: {
         "DEBIAN_FRONTEND": "noninteractive",
         "PYTHONUNBUFFERED": "1",
+        "PYTHONPATH": ".",
         "CI": "true",
         "TERM": "dumb",
         "LANG": "C.UTF-8",

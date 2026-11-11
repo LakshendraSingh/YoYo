@@ -280,8 +280,21 @@ class BatchEngine:
                     self.state.exit_code = 124
                     break
 
+                # 3. Provider generates Chain of Thought and Decision
+                decision = self.provider.decide_next_step(
+                    config=self.config,
+                    plan=self.plan,
+                    step_number=step_idx,
+                    observation=observation,
+                    last_error=last_error,
+                )
+
                 # Token Budget Guard (Runaway Loop Defense)
-                step_tokens = max(50, (len(observation) + len(self.config.goal) + 400) // 4)
+                step_tokens = (
+                    decision.tokens_used
+                    if getattr(decision, "tokens_used", None)
+                    else max(50, (len(observation) + len(self.config.goal) + 400) // 4)
+                )
                 self.state.cumulative_tokens_used += step_tokens
                 if cfg_token_budget > 0 and self.state.cumulative_tokens_used >= cfg_token_budget:
                     budget_msg = (
@@ -307,15 +320,6 @@ class BatchEngine:
                     self.state.error_message = budget_msg
                     self.state.exit_code = 1
                     break
-
-                # 3. Provider generates Chain of Thought and Decision
-                decision = self.provider.decide_next_step(
-                    config=self.config,
-                    plan=self.plan,
-                    step_number=step_idx,
-                    observation=observation,
-                    last_error=last_error,
-                )
 
                 # Log Chain of Thought directly to .txt audit file
                 self.audit_logger.log_chain_of_thought(
@@ -442,7 +446,7 @@ class BatchEngine:
 
             # Determine final status if loop ended on step count
             if not self.state.is_success and self.state.exit_code == 0:
-                if self.plan.all_completed or self.plan.is_finished:
+                if self.plan.steps and (self.plan.all_completed or self.plan.is_finished):
                     self.state.is_success = True
                     self.state.exit_code = 0
                 else:

@@ -29,6 +29,7 @@ class AgentDecision:
     tool_params: Dict[str, Any] = field(default_factory=dict)
     is_finish: bool = False
     finish_summary: str = ""
+    tokens_used: Optional[int] = None
 
 
 class BaseProvider(ABC):
@@ -391,8 +392,15 @@ class GeminiProvider(BaseProvider):
             )
             with urllib.request.urlopen(req, timeout=30) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
+                usage = data.get("usageMetadata", {})
                 text = data["candidates"][0]["content"]["parts"][0]["text"]
                 parsed = json.loads(text)
+                sys.stderr.write(
+                    f"[Gemini Step {step_number}] Tokens: {usage.get('totalTokenCount')} "
+                    f"(Prompt: {usage.get('promptTokenCount')}, Candidates: {usage.get('candidatesTokenCount')})\n"
+                    f"  Reasoning: {parsed.get('reasoning')}\n"
+                    f"  Decision : {parsed.get('decision')} | Tool: {parsed.get('tool_name')}({parsed.get('tool_params')}) | Finish: {parsed.get('is_finish')}\n"
+                )
 
                 thought = ChainOfThoughtEngine.create_thought(
                     phase=parsed.get("phase", "ACTING"),
@@ -407,6 +415,7 @@ class GeminiProvider(BaseProvider):
                     tool_params=parsed.get("tool_params", {}),
                     is_finish=parsed.get("is_finish", False),
                     finish_summary=parsed.get("finish_summary", ""),
+                    tokens_used=usage.get("totalTokenCount"),
                 )
         except Exception as e:
             # On any network or API error, fallback to resilient offline heuristic provider
@@ -487,6 +496,7 @@ class OpenAIProvider(BaseProvider):
                     tool_params=parsed.get("tool_params", {}),
                     is_finish=parsed.get("is_finish", False),
                     finish_summary=parsed.get("finish_summary", ""),
+                    tokens_used=usage.get("totalTokenCount"),
                 )
         except Exception:
             return self.fallback.decide_next_step(config, plan, step_number, observation, last_error, workspace_files)
@@ -563,6 +573,7 @@ class AnthropicProvider(BaseProvider):
                     tool_params=parsed.get("tool_params", {}),
                     is_finish=parsed.get("is_finish", False),
                     finish_summary=parsed.get("finish_summary", ""),
+                    tokens_used=usage.get("totalTokenCount"),
                 )
         except Exception:
             return self.fallback.decide_next_step(config, plan, step_number, observation, last_error, workspace_files)
@@ -625,6 +636,7 @@ class OllamaProvider(BaseProvider):
                     tool_params=parsed.get("tool_params", {}),
                     is_finish=parsed.get("is_finish", False),
                     finish_summary=parsed.get("finish_summary", ""),
+                    tokens_used=usage.get("totalTokenCount"),
                 )
         except Exception:
             return self.fallback.decide_next_step(config, plan, step_number, observation, last_error, workspace_files)

@@ -211,6 +211,8 @@ class ExecutionPlan:
 
     @property
     def is_finished(self) -> bool:
+        if not self.steps:
+            return False
         return self.current_step_index >= len(self.steps)
 
     @property

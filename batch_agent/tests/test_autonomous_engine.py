@@ -96,6 +96,43 @@ class TestAutonomousEngine(unittest.TestCase):
         summary_artifact = os.path.join(self.ws, "batch_summary.md")
         self.assertTrue(os.path.exists(summary_artifact), "batch_summary.md artifact should be generated")
 
+    def test_empty_plan_step_exhaustion_fails(self):
+        from batch_agent.intelligence.provider import BaseProvider, AgentDecision
+        from batch_agent.intelligence.cot_engine import ChainOfThoughtEngine
+
+        class NeverFinishingProvider(BaseProvider):
+            def decide_next_step(self, config, plan, step_number, observation, last_error=None, workspace_files=None):
+                thought = ChainOfThoughtEngine.create_thought(
+                    phase="ACTING",
+                    goal_analysis="Busy doing nothing",
+                    observation="Running",
+                    decision="Run a no-op",
+                )
+                return AgentDecision(
+                    thought=thought,
+                    tool_name="run_command",
+                    tool_params={"command": "echo doing work"},
+                    is_finish=False,
+                )
+
+        config = BatchAgentConfig(
+            job_id="test-exhaustion-job",
+            goal="Unfinished goal",
+            workspace_root=self.ws,
+            max_steps=2,
+            provider=LLMProviderType.HEURISTIC,
+            sandbox=SandboxConfig(enabled=True, profile=SandboxProfile.WORKSPACE, workspace_root=self.ws),
+            process=ProcessConfig(default_timeout_seconds=5),
+            audit=AuditConfig(log_file_path=self.audit_log_path),
+        )
+        engine = BatchEngine(config)
+        engine.provider = NeverFinishingProvider()
+        exit_code = engine.run()
+
+        self.assertEqual(exit_code, 1, "Exhausting max_steps without finishing should fail with exit code 1")
+        self.assertFalse(engine.state.is_success)
+        self.assertIn("Exhausted maximum step budget", engine.state.error_message)
+
 
 if __name__ == "__main__":
     unittest.main()
