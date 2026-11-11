@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
@@ -407,8 +408,9 @@ class GeminiProvider(BaseProvider):
                     is_finish=parsed.get("is_finish", False),
                     finish_summary=parsed.get("finish_summary", ""),
                 )
-        except Exception:
+        except Exception as e:
             # On any network or API error, fallback to resilient offline heuristic provider
+            sys.stderr.write(f"[GeminiProvider Warning: {e}]\n")
             return self.fallback.decide_next_step(config, plan, step_number, observation, last_error, workspace_files)
 
 

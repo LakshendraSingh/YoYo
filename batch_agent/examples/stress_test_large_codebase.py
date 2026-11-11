@@ -100,6 +100,7 @@ def run_benchmark(num_files: int, provider_name: str = "heuristic") -> int:
             workspace_root=ws,
             max_steps=10,
             provider=LLMProviderType(provider_name),
+            api_key=os.environ.get("GEMINI_API_KEY"),
             sandbox=SandboxConfig(
                 enabled=True,
                 profile=SandboxProfile.WORKSPACE,
@@ -124,6 +125,17 @@ def run_benchmark(num_files: int, provider_name: str = "heuristic") -> int:
 
         txt_size = os.path.getsize(txt_log) if os.path.exists(txt_log) else 0
         csv_size = os.path.getsize(csv_log) if os.path.exists(csv_log) else 0
+
+        if os.path.exists(txt_log):
+            print("\n--- AUDIT TRAIL TRACE EXCERPT ---")
+            with open(txt_log, "r", encoding="utf-8") as f:
+                content = f.read()
+                lines = content.splitlines()
+                # Show key steps
+                for line in lines:
+                    if any(k in line for k in ["=== STEP", "Phase:", "Decision:", "Tool:", "Exit Code:", "Result:", "SUCCESS", "FAILED"]):
+                        print(f"  {line}")
+            print("--- END AUDIT TRAIL TRACE ---\n")
 
         print("\n" + "=" * 70)
         print("BENCHMARK RESULTS SUMMARY:")
