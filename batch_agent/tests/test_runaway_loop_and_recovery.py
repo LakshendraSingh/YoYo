@@ -221,6 +221,37 @@ class TestRunawayLoopAndRecovery(unittest.TestCase):
         self.assertIn("[AUTONOMOUS RECOVERY SUCCESSFUL]", res.output)
         self.assertIn("Autonomous recovery path success!", res.output)
 
+    def test_pytest_translated_to_unittest_without_fake_stub(self):
+        # Verify that running a missing pytest command does NOT create a dummy pytest.py stub,
+        # but instead translates to python -m unittest and actually executes the test!
+        tracker = ProcessTracker()
+        sandbox = SandboxManager(SandboxConfig(enabled=False))
+        runner = ProcessRunner(sandbox=sandbox, tracker=tracker, config=ProcessConfig(default_timeout_seconds=10))
+        context = ToolContext(
+            workspace_root=self.ws,
+            cwd=self.ws,
+            sandbox=sandbox,
+            tracker=tracker,
+            runner=runner,
+        )
+
+        test_dir = os.path.join(self.ws, "tests")
+        os.makedirs(test_dir, exist_ok=True)
+        test_file = os.path.join(test_dir, "test_sample.py")
+        with open(test_file, "w") as f:
+            f.write("import unittest\nclass T(unittest.TestCase):\n    def test_pass(self): self.assertEqual(2+2, 4)\n")
+
+        tool = CommandExecutionTool()
+        cmd = f"python3 -m pytest tests/test_sample.py"
+        res = tool.run({"command": cmd}, context)
+
+        # 1. Must NOT create a dummy pytest.py stub
+        self.assertFalse(os.path.exists(os.path.join(self.ws, "pytest.py")), "Never create dummy stub for pytest!")
+
+        # 2. Must succeed by translating to unittest
+        self.assertTrue(res.success, f"Should recover by translating to unittest: {res.output}")
+        self.assertIn("Translated command to Python standard library unittest", res.output)
+
     # -------------------------------------------------------------------------
     # 5. Goal Supremacy Toggle (Enabled vs Strict Plan Mode)
     # -------------------------------------------------------------------------

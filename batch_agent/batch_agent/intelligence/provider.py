@@ -48,6 +48,17 @@ class BaseProvider(ABC):
         """Produce the next autonomous decision, reasoning, and tool call."""
         pass
 
+    def repair_failed_command(
+        self,
+        goal: str,
+        command: str,
+        exit_code: int,
+        stdout: str,
+        stderr: str,
+    ) -> Optional[Dict[str, str]]:
+        """Diagnose and synthesize a repaired command using intelligence backend."""
+        return None
+
 
 class HeuristicAutonomousProvider(BaseProvider):
     """
@@ -330,6 +341,26 @@ class HeuristicAutonomousProvider(BaseProvider):
                 tool_params={"command": exec_cmd},
             )
 
+    def repair_failed_command(
+        self,
+        goal: str,
+        command: str,
+        exit_code: int,
+        stdout: str,
+        stderr: str,
+    ) -> Optional[Dict[str, str]]:
+        if "pytest" in command:
+            repaired = re.sub(r"\bpython3?\s+-m\s+pytest\b", f"{sys.executable} -m unittest", command)
+            if repaired == command and "pytest" in command:
+                repaired = re.sub(r"\bpytest\b", f"{sys.executable} -m unittest", command)
+            if repaired != command:
+                return {
+                    "diagnosis": "Missing third-party pytest runner.",
+                    "repaired_command": repaired,
+                    "strategy": "Substitute standard library unittest runner",
+                }
+        return None
+
 
 class GeminiProvider(BaseProvider):
     """Zero-dependency HTTP client for Google Gemini LLM API."""
@@ -421,6 +452,58 @@ class GeminiProvider(BaseProvider):
             # On any network or API error, fallback to resilient offline heuristic provider
             sys.stderr.write(f"[GeminiProvider Warning: {e}]\n")
             return self.fallback.decide_next_step(config, plan, step_number, observation, last_error, workspace_files)
+
+    def repair_failed_command(
+        self,
+        goal: str,
+        command: str,
+        exit_code: int,
+        stdout: str,
+        stderr: str,
+    ) -> Optional[Dict[str, str]]:
+        if not self.api_key:
+            return self.fallback.repair_failed_command(goal, command, exit_code, stdout, stderr)
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
+        prompt = (
+            "You are YoYo's Autonomous Self-Healing Diagnostics Subsystem operating in a non-interactive batch environment.\n"
+            f"PRIMARY GOAL: {goal}\n"
+            f"A batch shell command failed with exit code {exit_code}.\n"
+            f"Failed Command: {command}\n"
+            f"STDOUT:\n{stdout[-1000:] if stdout else '[None]'}\n"
+            f"STDERR:\n{stderr[-1000:] if stderr else '[None]'}\n\n"
+            "Diagnose the failure (e.g. missing executable, missing package, incorrect flag, test runner differences) "
+            "and synthesize an exact, single repaired command to achieve the goal.\n"
+            "If pytest is missing, use Python standard library: 'python3 -m unittest'.\n"
+            "Respond ONLY with a JSON object conforming strictly to:\n"
+            '{"diagnosis": "Root cause analysis", "repaired_command": "exact command string", "strategy": "Concise strategy"}'
+        )
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.1, "responseMimeType": "application/json"},
+        }
+        try:
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                parsed = json.loads(text)
+                if parsed.get("repaired_command") and parsed["repaired_command"].strip() != command.strip():
+                    sys.stderr.write(
+                        f"[LLM Self-Healing Applied] Repaired: '{command}' -> '{parsed['repaired_command']}'\n"
+                        f"  Diagnosis: {parsed.get('diagnosis')}\n"
+                    )
+                    return parsed
+        except Exception as e:
+            sys.stderr.write(f"[LLM Self-Healing Warning: {e}]\n")
+            return self.fallback.repair_failed_command(goal, command, exit_code, stdout, stderr)
+
+        return self.fallback.repair_failed_command(goal, command, exit_code, stdout, stderr)
 
 
 class OpenAIProvider(BaseProvider):
