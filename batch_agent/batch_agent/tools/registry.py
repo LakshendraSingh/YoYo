@@ -29,6 +29,24 @@ logger = logging.getLogger(__name__)
 class ToolRegistry:
     """Registry holding all available tools for autonomous batch execution."""
 
+    ALIASES = {
+        "shell": "run_command",
+        "bash": "run_command",
+        "terminal": "run_command",
+        "cmd": "run_command",
+        "exec": "run_command",
+        "read_file": "file_read",
+        "write_file": "file_write",
+        "edit_file": "file_edit",
+        "list_files": "file_list",
+        "search_files": "file_search",
+        "search_file": "file_search",
+        "verify": "verify_test",
+        "run_test": "verify_test",
+        "run_tests": "verify_test",
+        "pytest": "verify_test",
+    }
+
     def __init__(self) -> None:
         self._tools: Dict[str, BaseTool] = {}
 
@@ -36,7 +54,13 @@ class ToolRegistry:
         self._tools[tool.name.lower()] = tool
 
     def get(self, name: str) -> Optional[BaseTool]:
-        return self._tools.get(name.lower())
+        key = name.lower()
+        if key in self._tools:
+            return self._tools[key]
+        if key in self.ALIASES:
+            canonical = self.ALIASES[key]
+            return self._tools.get(canonical)
+        return None
 
     def list_tool_names(self) -> List[str]:
         return sorted(list(self._tools.keys()))

@@ -332,7 +332,7 @@ class HeuristicAutonomousProvider(BaseProvider):
 class GeminiProvider(BaseProvider):
     """Zero-dependency HTTP client for Google Gemini LLM API."""
 
-    def __init__(self, api_key: Optional[str] = None, model: str = "gemini-2.5-flash") -> None:
+    def __init__(self, api_key: Optional[str] = None, model: str = "gemini-3.1-flash-lite") -> None:
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
         self.model = model
         self.fallback = HeuristicAutonomousProvider()
@@ -353,16 +353,27 @@ class GeminiProvider(BaseProvider):
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
 
         prompt = (
-            f"You are YoYo, an autonomous AI operating in a NON-INTERACTIVE BATCH OS.\n"
+            f"You are YoYo, an autonomous agentic AI operating in a NON-INTERACTIVE BATCH OS.\n"
             f"PRIMARY GOAL (TOP PRIORITY): {config.goal}\n"
             f"Plan Status:\n{plan.format_summary()}\n"
             f"Associated Files: {config.associated_files}\n"
             f"Current Step: {step_number}\n"
-            f"Observation: {observation}\n"
-            f"Last Error: {last_error or 'None'}\n"
-            f"GUIDELINE: The goal is paramount. You have full authority to alter the plan with 'update_plan' or do whatever is necessary to achieve the goal.\n\n"
-            f"Respond with a JSON object:\n"
-            f'{{"phase": "PLANNING|ACTING|REFLECTING|VERIFYING|MUTATION", "reasoning": "...", "tradeoffs": "...", "decision": "...", "tool_name": "...", "tool_params": {{...}}, "is_finish": false, "finish_summary": ""}}'
+            f"Latest Observation: {observation}\n"
+            f"Last Error: {last_error or 'None'}\n\n"
+            f"AVAILABLE TOOLS:\n"
+            f"- run_command: Run shell command non-interactively (params: {{'command': str}})\n"
+            f"- file_read: Read file contents (params: {{'path': str}})\n"
+            f"- file_write: Write/overwrite file (params: {{'path': str, 'content': str}})\n"
+            f"- file_edit: Resilient fuzzy patch (params: {{'path': str, 'target': str, 'replacement': str}})\n"
+            f"- file_list: List files in workspace (params: {{'recursive': bool}})\n"
+            f"- file_search: Regex search file contents (params: {{'pattern': str}})\n"
+            f"- verify_test: Run tests/syntax check (params: {{'command': str or 'test_file': str}})\n"
+            f"- ast_inspect: Extract AST classes and methods (params: {{'path': str}})\n"
+            f"- update_plan: Mutate execution plan (params: {{'action': 'add_step'|'remove_step'|'replan', ...}})\n\n"
+            f"COMPLETION INSTRUCTION:\n"
+            f"When the primary goal is completely accomplished and verified, set 'is_finish': true, 'tool_name': null, and 'finish_summary': 'Detailed accomplishment description'.\n\n"
+            f"Respond with a JSON object conforming strictly to:\n"
+            f'{{"phase": "PLANNING|ACTING|REFLECTING|VERIFYING|MUTATION", "reasoning": "...", "tradeoffs": "...", "decision": "...", "tool_name": "run_command"|null, "tool_params": {{"command": "..."}}, "is_finish": false, "finish_summary": ""}}'
         )
 
         payload = {
@@ -635,7 +646,7 @@ def create_provider(
             context_window=context_window,
         )
     elif provider_type == LLMProviderType.GEMINI:
-        return GeminiProvider(api_key=api_key, model=model or "gemini-2.5-flash")
+        return GeminiProvider(api_key=api_key, model=model if model and model != "heuristic-batch-v1" else "gemini-3.1-flash-lite")
     elif provider_type == LLMProviderType.OPENAI:
         return OpenAIProvider(api_key=api_key, model=model or "gpt-4o")
     elif provider_type == LLMProviderType.ANTHROPIC:
