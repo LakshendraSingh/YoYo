@@ -14,7 +14,7 @@ import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from batch_agent.config import BatchAgentConfig, LLMProviderType
 from batch_agent.intelligence.cot_engine import ChainOfThoughtEngine, ChainOfThoughtRecord
@@ -58,6 +58,45 @@ class BaseProvider(ABC):
     ) -> Optional[Dict[str, str]]:
         """Diagnose and synthesize a repaired command using intelligence backend."""
         return None
+
+    def _init_working_memory(self, max_entries: int = 8) -> None:
+        """Initialize bounded cross-step working memory for multi-file tasks."""
+        self._memory_history: List[str] = []
+        self._pending_action: Optional[Tuple[int, str, str]] = None
+        self._max_memory_entries = max_entries
+
+    def _update_and_format_memory(
+        self,
+        step_number: int,
+        observation: str,
+        last_error: Optional[str],
+    ) -> str:
+        """Record the outcome of the previous action and return formatted working memory."""
+        if not hasattr(self, "_memory_history"):
+            self._init_working_memory()
+
+        if self._pending_action is not None:
+            prev_step, prev_tool, prev_params = self._pending_action
+            if prev_step != step_number:
+                obs_snippet = (observation or "").strip().replace("\n", " | ")[:400]
+                err_snippet = f" [ERR: {last_error[:150]}]" if last_error else ""
+                entry = f"- Step {prev_step}: {prev_tool}({prev_params}) -> {obs_snippet}{err_snippet}"
+                self._memory_history.append(entry)
+                if len(self._memory_history) > self._max_memory_entries:
+                    self._memory_history = self._memory_history[-self._max_memory_entries:]
+                self._pending_action = None
+
+        if not self._memory_history:
+            return "None (First Step)"
+        return "\n".join(self._memory_history)
+
+    def _remember_decision(self, step_number: int, decision: AgentDecision) -> None:
+        """Store the current step's chosen tool call so its result is recorded on the next turn."""
+        if not hasattr(self, "_memory_history"):
+            self._init_working_memory()
+        tool_label = decision.tool_name or "finish"
+        params_str = json.dumps(decision.tool_params or {})[:160]
+        self._pending_action = (step_number, tool_label, params_str)
 
 
 class HeuristicAutonomousProvider(BaseProvider):
@@ -369,6 +408,7 @@ class GeminiProvider(BaseProvider):
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
         self.model = model or os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
         self.fallback = HeuristicAutonomousProvider()
+        self._init_working_memory(max_entries=8)
 
     def decide_next_step(
         self,
@@ -383,6 +423,7 @@ class GeminiProvider(BaseProvider):
             # Gracefully fallback to autonomous heuristic provider
             return self.fallback.decide_next_step(config, plan, step_number, observation, last_error, workspace_files)
 
+        history_summary = self._update_and_format_memory(step_number, observation, last_error)
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
 
         prompt = (
@@ -391,6 +432,7 @@ class GeminiProvider(BaseProvider):
             f"Plan Status:\n{plan.format_summary()}\n"
             f"Associated Files: {config.associated_files}\n"
             f"Current Step: {step_number}\n"
+            f"RECENT EXECUTION HISTORY (Working Memory):\n{history_summary}\n\n"
             f"Latest Observation: {observation}\n"
             f"Last Error: {last_error or 'None'}\n\n"
             f"AVAILABLE TOOLS:\n"
@@ -446,7 +488,7 @@ class GeminiProvider(BaseProvider):
                     decision=parsed.get("decision", ""),
                     tradeoffs=[parsed.get("tradeoffs", "")] if parsed.get("tradeoffs") else [],
                 )
-                return AgentDecision(
+                decision_obj = AgentDecision(
                     thought=thought,
                     tool_name=parsed.get("tool_name"),
                     tool_params=parsed.get("tool_params", {}),
@@ -454,6 +496,8 @@ class GeminiProvider(BaseProvider):
                     finish_summary=parsed.get("finish_summary", ""),
                     tokens_used=usage.get("totalTokenCount"),
                 )
+                self._remember_decision(step_number, decision_obj)
+                return decision_obj
         except Exception as e:
             # On any network or API error, fallback to resilient offline heuristic provider
             sys.stderr.write(f"[GeminiProvider Warning: {e}]\n")
@@ -532,6 +576,7 @@ class OpenAIProvider(BaseProvider):
         if not self.api_key:
             return self.fallback.decide_next_step(config, plan, step_number, observation, last_error, workspace_files)
 
+        history_summary = self._update_and_format_memory(step_number, observation, last_error)
         url = "https://api.openai.com/v1/chat/completions"
         system_msg = (
             "You are YoYo, an autonomous AI operating in a NON-INTERACTIVE BATCH OS.\n"
@@ -544,6 +589,7 @@ class OpenAIProvider(BaseProvider):
             f"Plan Status:\n{plan.format_summary()}\n"
             f"Associated Files: {config.associated_files}\n"
             f"Step: {step_number}\n"
+            f"RECENT EXECUTION HISTORY (Working Memory):\n{history_summary}\n\n"
             f"Observation: {observation}\n"
             f"Last Error: {last_error or 'None'}\n"
         )
@@ -579,7 +625,7 @@ class OpenAIProvider(BaseProvider):
                     decision=parsed.get("decision", ""),
                     tradeoffs=[parsed.get("tradeoffs", "")] if parsed.get("tradeoffs") else [],
                 )
-                return AgentDecision(
+                decision_obj = AgentDecision(
                     thought=thought,
                     tool_name=parsed.get("tool_name"),
                     tool_params=parsed.get("tool_params", {}),
@@ -587,6 +633,8 @@ class OpenAIProvider(BaseProvider):
                     finish_summary=parsed.get("finish_summary", ""),
                     tokens_used=usage.get("totalTokenCount"),
                 )
+                self._remember_decision(step_number, decision_obj)
+                return decision_obj
         except Exception:
             return self.fallback.decide_next_step(config, plan, step_number, observation, last_error, workspace_files)
 
@@ -656,7 +704,7 @@ class AnthropicProvider(BaseProvider):
                     decision=parsed.get("decision", ""),
                     tradeoffs=[parsed.get("tradeoffs", "")] if parsed.get("tradeoffs") else [],
                 )
-                return AgentDecision(
+                decision_obj = AgentDecision(
                     thought=thought,
                     tool_name=parsed.get("tool_name"),
                     tool_params=parsed.get("tool_params", {}),
@@ -664,6 +712,8 @@ class AnthropicProvider(BaseProvider):
                     finish_summary=parsed.get("finish_summary", ""),
                     tokens_used=usage.get("totalTokenCount"),
                 )
+                self._remember_decision(step_number, decision_obj)
+                return decision_obj
         except Exception:
             return self.fallback.decide_next_step(config, plan, step_number, observation, last_error, workspace_files)
 
@@ -719,7 +769,7 @@ class OllamaProvider(BaseProvider):
                     observation=observation[:200],
                     decision=parsed.get("decision", ""),
                 )
-                return AgentDecision(
+                decision_obj = AgentDecision(
                     thought=thought,
                     tool_name=parsed.get("tool_name"),
                     tool_params=parsed.get("tool_params", {}),
@@ -727,6 +777,8 @@ class OllamaProvider(BaseProvider):
                     finish_summary=parsed.get("finish_summary", ""),
                     tokens_used=usage.get("totalTokenCount"),
                 )
+                self._remember_decision(step_number, decision_obj)
+                return decision_obj
         except Exception:
             return self.fallback.decide_next_step(config, plan, step_number, observation, last_error, workspace_files)
 

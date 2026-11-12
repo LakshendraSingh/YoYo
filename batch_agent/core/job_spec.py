@@ -93,6 +93,7 @@ class BatchJobSpec:
             max_token_budget=data.get("max_token_budget", 150000),
             max_consecutive_failed_actions=data.get("max_consecutive_failed_actions", 3),
             enable_recovery_engine=data.get("enable_recovery_engine", True),
+            allow_dummy_stubs=data.get("allow_dummy_stubs", False),
             provider=provider,
             model_name=data.get("model_name", "heuristic-batch-v1"),
             model_weights_path=model_weights,

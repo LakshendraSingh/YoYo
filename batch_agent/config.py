@@ -179,6 +179,7 @@ class BatchAgentConfig:
     max_token_budget: int = 150000   # Hard token budget limit to protect cluster costs
     max_consecutive_failed_actions: int = 3  # Circuit breaker threshold to prevent runaway loops
     enable_recovery_engine: bool = True      # Autonomous command failure detection & self-healing
+    allow_dummy_stubs: bool = False          # Disabled by default in production so missing deps fail cleanly instead of writing dummy .py shims
     job_timeout_seconds: int = 1800  # 30 minutes wall-clock timeout
     resume: bool = False             # Resume from checkpoint if available
     checkpoint_file: Optional[str] = None  # Explicit path to checkpoint JSON file

@@ -6,12 +6,88 @@ Includes resilient multi-tier fuzzy patching to eliminate fragile code editing f
 from __future__ import annotations
 
 import difflib
+import fnmatch
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from batch_agent.tools.base import BaseTool, ToolContext, ToolResult
+
+DEFAULT_IGNORED_DIRS = frozenset({
+    ".git", ".hg", ".svn", "__pycache__", "node_modules",
+    "venv", ".venv", "env", ".env", "dist", "build", "target",
+    "vendor", "coverage", ".tox", ".nox", ".pytest_cache",
+    ".mypy_cache", ".ruff_cache", ".idea", ".vscode", ".yoyo_state",
+})
+
+
+def _load_gitignore_patterns(workspace_root: str) -> List[str]:
+    """Load ignore patterns from .gitignore at workspace_root if present."""
+    gitignore_path = os.path.join(workspace_root, ".gitignore")
+    patterns: List[str] = []
+    if not os.path.isfile(gitignore_path):
+        return patterns
+    try:
+        with open(gitignore_path, "r", encoding="utf-8", errors="ignore") as f:
+            for raw in f:
+                line = raw.strip()
+                if not line or line.startswith("#") or line.startswith("!"):
+                    continue
+                patterns.append(line.rstrip("/"))
+    except Exception:
+        pass
+    return patterns
+
+
+def _is_ignored_entry(name: str, rel_path: str, is_dir: bool, gitignore_patterns: List[str]) -> bool:
+    """Return True if a file or directory should be excluded from workspace traversal."""
+    if name.startswith("."):
+        return True
+    if is_dir and (name in DEFAULT_IGNORED_DIRS or name.endswith(".egg-info")):
+        return True
+    rel_norm = rel_path.replace(os.sep, "/")
+    for pat in gitignore_patterns:
+        if fnmatch.fnmatch(name, pat) or fnmatch.fnmatch(rel_norm, pat):
+            return True
+    return False
+
+
+def _walk_workspace_files(start_dir: str, workspace_root: str) -> Iterator[Tuple[str, str, str]]:
+    """Yield (full_path, rel_to_start, filename) while pruning build/venv/gitignored directories."""
+    patterns = _load_gitignore_patterns(workspace_root)
+    for root, dirs, files in os.walk(start_dir):
+        rel_ws = os.path.relpath(root, workspace_root)
+        dirs[:] = sorted(
+            d for d in dirs
+            if not _is_ignored_entry(
+                d,
+                d if rel_ws == "." else os.path.join(rel_ws, d),
+                is_dir=True,
+                gitignore_patterns=patterns,
+            )
+        )
+        rel_start = os.path.relpath(root, start_dir)
+        for f in sorted(files):
+            rel_file_ws = f if rel_ws == "." else os.path.join(rel_ws, f)
+            if _is_ignored_entry(f, rel_file_ws, is_dir=False, gitignore_patterns=patterns):
+                continue
+            full_path = os.path.join(root, f)
+            rel_file_start = f if rel_start == "." else os.path.join(rel_start, f)
+            yield full_path, rel_file_start, f
+
+
+def _find_path_candidates(path: str, context: ToolContext) -> List[str]:
+    """Search non-ignored workspace files for basename/stem matches to recover from shorthand paths."""
+    basename = os.path.basename(path)
+    stem = os.path.splitext(basename)[0]
+    ext = os.path.splitext(basename)[1]
+    candidates: List[str] = []
+    for full_path, _, f in _walk_workspace_files(context.workspace_root, context.workspace_root):
+        f_stem = os.path.splitext(f)[0]
+        if f == basename or stem == f_stem or (stem in f_stem and (not ext or f.endswith(ext))):
+            candidates.append(os.path.relpath(full_path, context.cwd))
+    return candidates
 
 
 class FileReadTool(BaseTool):
@@ -37,14 +113,7 @@ class FileReadTool(BaseTool):
 
         abs_path = os.path.abspath(os.path.join(context.cwd, path)) if not os.path.isabs(path) else path
         if not os.path.exists(abs_path):
-            basename = os.path.basename(path)
-            stem = os.path.splitext(basename)[0]
-            candidates = []
-            for root, _, files in os.walk(context.workspace_root):
-                for f in files:
-                    f_stem = os.path.splitext(f)[0]
-                    if f == basename or stem == f_stem or (stem in f_stem and f.endswith(".py")):
-                        candidates.append(os.path.relpath(os.path.join(root, f), context.cwd))
+            candidates = _find_path_candidates(path, context)
             if len(candidates) > 1 and "test" not in os.path.basename(path).lower():
                 non_tests = [c for c in candidates if "test" not in os.path.basename(c).lower()]
                 if len(non_tests) == 1:
@@ -150,14 +219,7 @@ class FileEditTool(BaseTool):
         abs_path = os.path.abspath(os.path.join(context.cwd, path)) if not os.path.isabs(path) else path
         if not os.path.exists(abs_path):
             # Attempt autonomous workspace search for shifted or basename-only path
-            basename = os.path.basename(path)
-            stem = os.path.splitext(basename)[0]
-            candidates = []
-            for root, _, files in os.walk(context.workspace_root):
-                for f in files:
-                    f_stem = os.path.splitext(f)[0]
-                    if f == basename or stem == f_stem or (stem in f_stem and f.endswith(".py")):
-                        candidates.append(os.path.relpath(os.path.join(root, f), context.cwd))
+            candidates = _find_path_candidates(path, context)
             if len(candidates) > 1 and target:
                 containing_target = []
                 for c in candidates:
@@ -299,20 +361,17 @@ class FileListTool(BaseTool):
         entries: List[str] = []
         try:
             if recursive:
-                for root, dirs, files in os.walk(abs_path):
-                    # Filter out hidden or build dirs
-                    dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("__pycache__", "node_modules")]
-                    rel_root = os.path.relpath(root, abs_path)
-                    for f in files:
-                        if not f.startswith("."):
-                            full = os.path.join(rel_root, f) if rel_root != "." else f
-                            entries.append(full)
+                for _, rel_file, _ in _walk_workspace_files(abs_path, context.workspace_root):
+                    entries.append(rel_file)
             else:
+                patterns = _load_gitignore_patterns(context.workspace_root)
+                rel_ws = os.path.relpath(abs_path, context.workspace_root)
                 for entry in sorted(os.listdir(abs_path)):
-                    if not entry.startswith("."):
-                        full_entry = os.path.join(abs_path, entry)
-                        suffix = "/" if os.path.isdir(full_entry) else ""
-                        entries.append(entry + suffix)
+                    full_entry = os.path.join(abs_path, entry)
+                    is_dir = os.path.isdir(full_entry)
+                    rel_entry = entry if rel_ws == "." else os.path.join(rel_ws, entry)
+                    if not _is_ignored_entry(entry, rel_entry, is_dir=is_dir, gitignore_patterns=patterns):
+                        entries.append(entry + ("/" if is_dir else ""))
 
             total_count = len(entries)
             if total_count > 100:
@@ -355,33 +414,26 @@ class FileSearchTool(BaseTool):
         matches: List[str] = []
         ws_root = context.workspace_root
 
-        for root, dirs, files in os.walk(ws_root):
-            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("__pycache__", "node_modules")]
-            for filename in files:
-                if filename.startswith("."):
-                    continue
-                if ext_filter and not filename.endswith(ext_filter):
-                    continue
+        for full_path, rel_path, filename in _walk_workspace_files(ws_root, ws_root):
+            if ext_filter and not filename.endswith(ext_filter):
+                continue
 
-                full_path = os.path.join(root, filename)
-                rel_path = os.path.relpath(full_path, ws_root)
+            # Skip sensitive files
+            if context.sandbox.boundary.is_path_sensitive(full_path):
+                continue
 
-                # Skip sensitive files
-                if context.sandbox.boundary.is_path_sensitive(full_path):
-                    continue
+            try:
+                with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
+                    for line_num, line in enumerate(f, start=1):
+                        if regex.search(line):
+                            matches.append(f"{rel_path}:{line_num}: {line.strip()[:100]}")
+                            if len(matches) >= 100:
+                                break
+            except Exception:
+                pass
 
-                try:
-                    with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
-                        for line_num, line in enumerate(f, start=1):
-                            if regex.search(line):
-                                matches.append(f"{rel_path}:{line_num}: {line.strip()[:100]}")
-                                if len(matches) >= 100:
-                                    break
-                except Exception:
-                    pass
-
-                if len(matches) >= 100:
-                    break
+            if len(matches) >= 100:
+                break
 
         return ToolResult(
             success=True,

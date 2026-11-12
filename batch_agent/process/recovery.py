@@ -263,8 +263,10 @@ class CommandRecoveryEngine:
                         cls._log_recovery(attempt, audit_logger, step_number)
                         return attempt
 
-                # 3. Only synthesize safe fallback shim module for non-test non-compiler libraries
-                if mod_name not in FORBIDDEN_STUB_MODULES:
+                # 3. Only synthesize safe fallback shim module if explicitly opted in (disabled by default in production)
+                engine_ref = getattr(context, "engine", None)
+                allow_stubs = getattr(getattr(engine_ref, "config", None), "allow_dummy_stubs", False) if engine_ref else False
+                if allow_stubs and mod_name not in FORBIDDEN_STUB_MODULES:
                     shim_path = os.path.join(context.cwd, f"{mod_name}.py")
                     if not os.path.exists(shim_path):
                         shim_code = (
