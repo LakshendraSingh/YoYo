@@ -134,6 +134,17 @@ class FileReadTool(BaseTool):
             with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
                 lines = f.readlines()
 
+            has_explicit_range = ("start_line" in params) or ("end_line" in params)
+            if not has_explicit_range and len(lines) > 1000:
+                return ToolResult(
+                    success=False,
+                    error=(
+                        f"File '{path}' has {len(lines):,} lines. Reading the entire file at once would overflow context. "
+                        f"Use 'file_search' with {{'path': '{path}', 'pattern': '...', 'context_lines': 5}} or "
+                        f"'ast_inspect' with {{'path': '{path}', 'query': '...'}}, then call 'file_read' with explicit 'start_line' and 'end_line'."
+                    ),
+                )
+
             start_line = params.get("start_line", 1)
             end_line = params.get("end_line", len(lines))
 
@@ -390,15 +401,17 @@ class FileListTool(BaseTool):
 
 
 class FileSearchTool(BaseTool):
-    """Searches workspace files for regex patterns."""
+    """Searches workspace files (or a single target file) for regex patterns with optional context lines."""
 
     name = "file_search"
-    description = "Search for regex or text matches across workspace files."
+    description = "Search for regex or text matches across workspace files or within a specific file."
     parameters = {
         "type": "object",
         "properties": {
             "pattern": {"type": "string", "description": "Text pattern or regex to search for"},
             "extension": {"type": "string", "description": "Optional file extension filter (e.g. '.py')"},
+            "path": {"type": "string", "description": "Optional specific file or subdirectory to search within"},
+            "context_lines": {"type": "integer", "description": "Optional number of lines before/after each match (default: 0)"},
         },
         "required": ["pattern"],
     }
@@ -406,39 +419,72 @@ class FileSearchTool(BaseTool):
     def run(self, params: Dict[str, Any], context: ToolContext) -> ToolResult:
         pattern = params.get("pattern", "")
         ext_filter = params.get("extension", "")
+        target_path = params.get("path", "")
+        context_lines = max(0, min(10, int(params.get("context_lines", 0) or 0)))
 
         try:
             regex = re.compile(pattern, re.IGNORECASE)
         except re.error as e:
             return ToolResult(success=False, error=f"Invalid regex: {e}")
 
-        matches: List[str] = []
         ws_root = context.workspace_root
+        file_targets: List[Tuple[str, str, str]] = []
 
-        for full_path, rel_path, filename in _walk_workspace_files(ws_root, ws_root):
+        if target_path:
+            allowed, reason = context.sandbox.validate_read(target_path, context.cwd)
+            if not allowed:
+                return ToolResult(success=False, error=reason)
+            abs_target = os.path.abspath(os.path.join(context.cwd, target_path)) if not os.path.isabs(target_path) else target_path
+            if not os.path.exists(abs_target):
+                return ToolResult(success=False, error=f"Search path does not exist: {target_path}")
+            if os.path.isfile(abs_target):
+                file_targets.append((abs_target, os.path.relpath(abs_target, ws_root), os.path.basename(abs_target)))
+            else:
+                file_targets.extend(_walk_workspace_files(abs_target, ws_root))
+        else:
+            file_targets.extend(_walk_workspace_files(ws_root, ws_root))
+
+        matches: List[str] = []
+        match_count = 0
+
+        for full_path, rel_path, filename in file_targets:
             if ext_filter and not filename.endswith(ext_filter):
                 continue
-
-            # Skip sensitive files
             if context.sandbox.boundary.is_path_sensitive(full_path):
                 continue
 
             try:
                 with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
-                    for line_num, line in enumerate(f, start=1):
-                        if regex.search(line):
-                            matches.append(f"{rel_path}:{line_num}: {line.strip()[:100]}")
-                            if len(matches) >= 100:
-                                break
+                    if context_lines > 0:
+                        file_lines = f.readlines()
+                        for idx, line in enumerate(file_lines):
+                            if regex.search(line):
+                                match_count += 1
+                                start = max(0, idx - context_lines)
+                                end = min(len(file_lines), idx + context_lines + 1)
+                                snippet = [f"--- {rel_path}:{idx + 1} ---"]
+                                for ctx_idx in range(start, end):
+                                    marker = ">" if ctx_idx == idx else " "
+                                    snippet.append(f"{marker}{ctx_idx + 1:5d} | {file_lines[ctx_idx].rstrip()[:120]}")
+                                matches.append("\n".join(snippet))
+                                if match_count >= 50:
+                                    break
+                    else:
+                        for line_num, line in enumerate(f, start=1):
+                            if regex.search(line):
+                                match_count += 1
+                                matches.append(f"{rel_path}:{line_num}: {line.strip()[:100]}")
+                                if match_count >= 100:
+                                    break
             except Exception:
                 pass
 
-            if len(matches) >= 100:
+            if (context_lines > 0 and match_count >= 50) or match_count >= 100:
                 break
 
         return ToolResult(
             success=True,
             output="\n".join(matches) if matches else f"No matches found for '{pattern}'.",
-            metadata={"match_count": len(matches)},
+            metadata={"match_count": match_count},
         )
 

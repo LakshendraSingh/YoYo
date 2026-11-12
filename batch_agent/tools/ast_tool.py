@@ -32,12 +32,14 @@ class CodeASTInspectTool(BaseTool):
         "type": "object",
         "properties": {
             "path": {"type": "string", "description": "Relative path to the Python or C/C++ file"},
+            "query": {"type": "string", "description": "Optional case-insensitive symbol filter (e.g. function or class name)"},
         },
         "required": ["path"],
     }
 
     def run(self, params: Dict[str, Any], context: ToolContext) -> ToolResult:
         path = params.get("path", "")
+        query = (params.get("query") or "").strip().lower()
         allowed, reason = context.sandbox.validate_read(path, context.cwd)
         if not allowed:
             return ToolResult(success=False, error=reason)
@@ -61,7 +63,12 @@ class CodeASTInspectTool(BaseTool):
                 return result
             imports, classes, functions = result
 
-        output_parts = [f"=== AST Symbol Summary for {path} ==="]
+        if query:
+            imports = [i for i in imports if query in i.lower()]
+            classes = [c for c in classes if query in c.lower()]
+            functions = [fn for fn in functions if query in fn.lower()]
+
+        output_parts = [f"=== AST Symbol Summary for {path}" + (f" (filter='{query}')" if query else "") + " ==="]
         if imports:
             output_parts.append("\nImports:\n" + "\n".join(f"  {i}" for i in imports))
         if classes:

@@ -16,7 +16,7 @@ from batch_agent.process.tracker import ProcessTracker
 from batch_agent.sandbox.sandbox_manager import SandboxManager
 from batch_agent.tools.ast_tool import CodeASTInspectTool
 from batch_agent.tools.base import ToolContext
-from batch_agent.tools.filesystem import FileEditTool, FileListTool, FileSearchTool
+from batch_agent.tools.filesystem import FileEditTool, FileListTool, FileReadTool, FileSearchTool
 
 
 class TestProductionReadiness(unittest.TestCase):
@@ -195,6 +195,40 @@ int compute_sum(int x, int y) {
         self.assertNotIn("fake_commented_func", res.output)
         self.assertNotIn("FakeCommentedClass", res.output)
         self.assertNotIn("if (", res.output)
+
+    def test_large_single_file_drilldown(self):
+        big_path = os.path.join(self.ws, "monolith.py")
+        lines = [f"def helper_{i}(x):\n    return x + {i}\n" for i in range(1100)]
+        lines.append("def target_needle_fn(a, b):\n    return a + b  # bug here\n")
+        with open(big_path, "w", encoding="utf-8") as f:
+            f.write("".join(lines))
+
+        ctx = self._make_context()
+
+        # 1. Unbounded file_read on >1000 line file refuses to overflow context
+        unbounded = FileReadTool().run({"path": "monolith.py"}, ctx)
+        self.assertFalse(unbounded.success)
+        self.assertIn("file_search", unbounded.error or "")
+
+        # 2. In-file file_search with context_lines pinpoints the buried function
+        search = FileSearchTool().run(
+            {"path": "monolith.py", "pattern": "target_needle_fn", "context_lines": 2},
+            ctx,
+        )
+        self.assertTrue(search.success)
+        self.assertIn("target_needle_fn", search.output)
+        self.assertIn("return a + b", search.output)
+
+        # 3. ast_inspect with query filters down to the single matching symbol
+        ast_res = CodeASTInspectTool().run({"path": "monolith.py", "query": "target_needle"}, ctx)
+        self.assertTrue(ast_res.success)
+        self.assertIn("target_needle_fn", ast_res.output)
+        self.assertNotIn("helper_0", ast_res.output)
+
+        # 4. Targeted range read succeeds cleanly
+        ranged = FileReadTool().run({"path": "monolith.py", "start_line": 2201, "end_line": 2202}, ctx)
+        self.assertTrue(ranged.success)
+        self.assertIn("target_needle_fn", ranged.output)
 
 
 if __name__ == "__main__":
