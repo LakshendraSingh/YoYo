@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from batch_agent.config import BatchAgentConfig, ProcessConfig, SandboxConfig
 from batch_agent.intelligence.cot_engine import ChainOfThoughtEngine
 from batch_agent.intelligence.provider import AgentDecision, GeminiProvider
-from batch_agent.process.recovery import CommandRecoveryEngine
+from batch_agent.process.recovery import CommandRecoveryEngine, FailureCategory
 from batch_agent.process.runner import ProcessResult, ProcessRunner
 from batch_agent.process.tracker import ProcessTracker
 from batch_agent.sandbox.sandbox_manager import SandboxManager
@@ -133,6 +133,22 @@ class TestProductionReadiness(unittest.TestCase):
         self.assertIn("Step 1: file_read", h3)
         self.assertIn("Step 2: file_read", h3)
         self.assertIn("app.route('/login')", h3)
+
+    def test_cpp_and_polyglot_test_failures_not_intercepted(self):
+        samples = [
+            ("ctest --test-dir build", "1/2 Test #1: MathTest .........................***Failed    0.01 sec"),
+            ("./build/unit_tests", "[  FAILED  ] MathSuite.MultiplyTest (0 ms)"),
+            ("./test_bin", "Assertion failed: (result == 42), function main, file main.c, line 12."),
+            ("go test ./...", "--- FAIL: TestMultiply (0.00s)"),
+        ]
+        ctx = self._make_context()
+        for cmd, out in samples:
+            res = ProcessResult(command=cmd, exit_code=1, stdout=out, stderr="", duration_seconds=0.05)
+            cat, _ = CommandRecoveryEngine.diagnose_failure(cmd, res)
+            self.assertEqual(cat, FailureCategory.ASSERTION_OR_TEST_FAILURE, f"Failed for: {cmd}")
+            attempt = CommandRecoveryEngine.attempt_recovery(cmd, res, ctx)
+            self.assertFalse(attempt.success)
+            self.assertIsNone(attempt.repaired_command)
 
 
 if __name__ == "__main__":

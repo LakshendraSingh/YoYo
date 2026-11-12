@@ -90,8 +90,20 @@ class CommandRecoveryEngine:
         if "Permission denied" in combined or result.exit_code == 126:
             return FailureCategory.PERMISSION_DENIED, "Subprocess encountered filesystem permission or access restriction."
 
-        # 7. Unit test failure
-        if "AssertionError" in combined or "FAILED (failures=" in combined or "FAIL:" in combined:
+        # 7. Unit / integration test failure (Python, C/C++ GoogleTest/CTest/Catch2/assert, Go, Rust)
+        test_failure_markers = (
+            "AssertionError",
+            "FAILED (failures=",
+            "FAIL:",
+            "[  FAILED  ]",
+            "***Failed",
+            "tests failed out of",
+            "FAILED:",
+            "Assertion failed:",
+            "Assertion `",
+            "--- FAIL:",
+        )
+        if any(marker in combined for marker in test_failure_markers):
             return FailureCategory.ASSERTION_OR_TEST_FAILURE, "Automated test assertions failed during execution."
 
         return FailureCategory.GENERAL_ERROR, f"Command exited with non-zero status code: {result.exit_code}."

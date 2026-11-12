@@ -17,6 +17,7 @@ from batch_agent.tools.base import BaseTool, ToolContext, ToolResult
 DEFAULT_IGNORED_DIRS = frozenset({
     ".git", ".hg", ".svn", "__pycache__", "node_modules",
     "venv", ".venv", "env", ".env", "dist", "build", "target",
+    "cmake-build-debug", "cmake-build-release",
     "vendor", "coverage", ".tox", ".nox", ".pytest_cache",
     ".mypy_cache", ".ruff_cache", ".idea", ".vscode", ".yoyo_state",
 })
