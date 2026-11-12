@@ -8,6 +8,7 @@ Supports direct loading of:
 
 from __future__ import annotations
 
+import gc
 import json
 import logging
 import os
@@ -112,20 +113,8 @@ class LocalWeightsProvider(BaseProvider):
                 model_dir = os.path.dirname(self.weights_path) if is_safetensors_file else self.weights_path
                 self._hf_tokenizer = AutoTokenizer.from_pretrained(model_dir)
 
-                target_device = self.device
-                if target_device == "auto":
-                    device_map = "auto" if torch.cuda.is_available() else None
-                elif target_device == "cuda" and torch.cuda.is_available():
-                    device_map = "cuda"
-                else:
-                    device_map = None
-
-                self._hf_model = AutoModelForCausalLM.from_pretrained(
-                    model_dir,
-                    device_map=device_map,
-                    torch_dtype="auto",
-                    low_cpu_mem_usage=True,
-                )
+                self._hf_model_dir = model_dir
+                self._load_transformers_model(torch, AutoModelForCausalLM, model_dir, headroom_ratio=0.80)
                 self._backend_type = "transformers"
                 return
             except ImportError:
@@ -143,6 +132,150 @@ class LocalWeightsProvider(BaseProvider):
     @property
     def backend_type(self) -> str:
         return self._backend_type or "uninitialized"
+
+    @staticmethod
+    def _build_cuda_max_memory(torch_mod: Any, headroom_ratio: float = 0.80) -> Optional[Dict[Any, str]]:
+        """
+        Build per-GPU max_memory limits leaving VRAM headroom for KV cache & activations.
+        Prevents accelerate/device_map='auto' from packing 100% of GPU 0 on multi-GPU nodes (e.g. 4x H100).
+        """
+        if not torch_mod.cuda.is_available():
+            return None
+        num_gpus = torch_mod.cuda.device_count()
+        if num_gpus <= 0:
+            return None
+        max_memory: Dict[Any, str] = {}
+        for idx in range(num_gpus):
+            try:
+                free_bytes, _ = torch_mod.cuda.mem_get_info(idx)
+            except Exception:
+                free_bytes = torch_mod.cuda.get_device_properties(idx).total_memory
+            # Reserve extra headroom on GPU 0 where input tensors & LM head logits allocate
+            gpu_ratio = headroom_ratio if idx == 0 else min(0.90, headroom_ratio + 0.08)
+            usable_gib = max(1, int((free_bytes * gpu_ratio) / (1024 ** 3)))
+            max_memory[idx] = f"{usable_gib}GiB"
+        max_memory["cpu"] = "128GiB"
+        return max_memory
+
+    def _load_transformers_model(self, torch_mod: Any, auto_model_cls: Any, model_dir: str, headroom_ratio: float = 0.80) -> None:
+        """Load HuggingFace model sharded across all available GPUs with KV-cache headroom."""
+        use_cuda = self.device in ("auto", "cuda") and torch_mod.cuda.is_available()
+        device_map = "auto" if use_cuda else None
+        max_memory = self._build_cuda_max_memory(torch_mod, headroom_ratio=headroom_ratio) if use_cuda else None
+
+        kwargs: Dict[str, Any] = {
+            "device_map": device_map,
+            "torch_dtype": "auto",
+            "low_cpu_mem_usage": True,
+        }
+        if max_memory is not None:
+            kwargs["max_memory"] = max_memory
+
+        self._hf_model = auto_model_cls.from_pretrained(model_dir, **kwargs)
+
+    def _run_inference(self, prompt: str) -> str:
+        """Execute a single inference pass on the active local weights backend."""
+        if self._backend_type == "llama_cpp" and self._llama_model is not None:
+            response = self._llama_model(
+                prompt=prompt,
+                max_tokens=1024,
+                temperature=self.temperature,
+                stop=["</s>", "<|im_end|>", "\n\n\n"],
+            )
+            return response["choices"][0]["text"]
+
+        if self._backend_type == "llama_cli" and self._llama_cli_path is not None:
+            cmd = [
+                self._llama_cli_path,
+                "--model", self.weights_path,
+                "--prompt", prompt,
+                "--ctx-size", str(self.context_window),
+                "--n-gpu-layers", str(self.n_gpu_layers),
+                "--n-predict", "1024",
+                "--temp", str(self.temperature),
+                "--threads", str(min(8, os.cpu_count() or 4)),
+            ]
+            proc = subprocess.run(
+                cmd,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=120,
+            )
+            if proc.returncode != 0 and "out of memory" in (proc.stderr or "").lower():
+                raise RuntimeError(f"llama-cli out of memory: {proc.stderr.strip()}")
+            return proc.stdout
+
+        if self._backend_type == "transformers" and self._hf_model is not None:
+            import torch
+            inputs = self._hf_tokenizer(prompt, return_tensors="pt")
+            if hasattr(self._hf_model, "device"):
+                inputs = {k: v.to(self._hf_model.device) for k, v in inputs.items()}
+            with torch.no_grad():
+                outputs = self._hf_model.generate(
+                    **inputs,
+                    max_new_tokens=1024,
+                    temperature=self.temperature,
+                    do_sample=self.temperature > 0,
+                )
+            return self._hf_tokenizer.decode(outputs[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
+
+        return ""
+
+    def _recover_from_oom(self) -> bool:
+        """Free GPU cache and reload model with larger KV-cache VRAM headroom."""
+        gc.collect()
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
+
+        if self._backend_type == "transformers" and getattr(self, "_hf_model_dir", None):
+            try:
+                import torch
+                from transformers import AutoModelForCausalLM
+                self._hf_model = None
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                logger.warning("VRAM OOM during inference: reloading Transformers model with 35%% KV-cache headroom...")
+                self._load_transformers_model(torch, AutoModelForCausalLM, self._hf_model_dir, headroom_ratio=0.65)
+                return True
+            except Exception as reload_err:
+                logger.warning("Transformers OOM reload failed: %s", reload_err)
+                return False
+
+        if self._backend_type == "llama_cpp" and self._llama_model is not None:
+            try:
+                import llama_cpp
+                self._llama_model = None
+                gc.collect()
+                next_layers = 40 if self.n_gpu_layers == -1 else max(0, self.n_gpu_layers // 2)
+                if next_layers == self.n_gpu_layers:
+                    return False
+                self.n_gpu_layers = next_layers
+                logger.warning("VRAM OOM during llama.cpp inference: reloading with n_gpu_layers=%d...", next_layers)
+                self._llama_model = llama_cpp.Llama(
+                    model_path=self.weights_path,
+                    n_gpu_layers=next_layers,
+                    n_ctx=self.context_window,
+                    verbose=False,
+                )
+                return True
+            except Exception as reload_err:
+                logger.warning("llama.cpp OOM reload failed: %s", reload_err)
+                return False
+
+        if self._backend_type == "llama_cli":
+            next_layers = 40 if self.n_gpu_layers == -1 else max(0, self.n_gpu_layers // 2)
+            if next_layers != self.n_gpu_layers:
+                self.n_gpu_layers = next_layers
+                return True
+
+        return False
 
     def decide_next_step(
         self,
@@ -164,47 +297,13 @@ class LocalWeightsProvider(BaseProvider):
 
         raw_output = ""
         try:
-            if self._backend_type == "llama_cpp" and self._llama_model is not None:
-                response = self._llama_model(
-                    prompt=prompt,
-                    max_tokens=1024,
-                    temperature=self.temperature,
-                    stop=["</s>", "<|im_end|>", "\n\n\n"],
-                )
-                raw_output = response["choices"][0]["text"]
-
-            elif self._backend_type == "llama_cli" and self._llama_cli_path is not None:
-                cmd = [
-                    self._llama_cli_path,
-                    "--model", self.weights_path,
-                    "--prompt", prompt,
-                    "--n-predict", "1024",
-                    "--temp", str(self.temperature),
-                    "--threads", str(min(8, os.cpu_count() or 4)),
-                ]
-                proc = subprocess.run(
-                    cmd,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    timeout=120,
-                )
-                raw_output = proc.stdout
-
-            elif self._backend_type == "transformers" and self._hf_model is not None:
-                import torch
-                inputs = self._hf_tokenizer(prompt, return_tensors="pt")
-                if hasattr(self._hf_model, "device"):
-                    inputs = {k: v.to(self._hf_model.device) for k, v in inputs.items()}
-                with torch.no_grad():
-                    outputs = self._hf_model.generate(
-                        **inputs,
-                        max_new_tokens=1024,
-                        temperature=self.temperature,
-                        do_sample=self.temperature > 0,
-                    )
-                raw_output = self._hf_tokenizer.decode(outputs[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
+            try:
+                raw_output = self._run_inference(prompt)
+            except Exception as infer_err:
+                if "out of memory" in str(infer_err).lower() and self._recover_from_oom():
+                    raw_output = self._run_inference(prompt)
+                else:
+                    raise
 
             # Parse JSON output from model
             parsed = self._extract_json(raw_output)

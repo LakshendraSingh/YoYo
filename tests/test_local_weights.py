@@ -71,6 +71,60 @@ class TestLocalWeightsProvider(unittest.TestCase):
         provider = LocalWeightsProvider(weights_path=hf_dir)
         self.assertIn(provider.backend_type, ["transformers", "heuristic_fallback"])
 
+    def test_multi_gpu_h100_max_memory_reserves_kv_headroom(self):
+        class MockCuda:
+            @staticmethod
+            def is_available():
+                return True
+
+            @staticmethod
+            def device_count():
+                return 4
+
+            @staticmethod
+            def mem_get_info(idx):
+                h100_80g = 80 * (1024 ** 3)
+                return (h100_80g, h100_80g)
+
+        class MockTorch:
+            cuda = MockCuda()
+
+        mem_map = LocalWeightsProvider._build_cuda_max_memory(MockTorch(), headroom_ratio=0.80)
+        self.assertEqual(mem_map[0], "64GiB")
+        self.assertEqual(mem_map[1], "70GiB")
+        self.assertEqual(mem_map[2], "70GiB")
+        self.assertEqual(mem_map[3], "70GiB")
+        self.assertEqual(mem_map["cpu"], "128GiB")
+
+    def test_oom_during_inference_triggers_recovery_and_retry(self):
+        non_existent = os.path.join(self.ws, "missing.gguf")
+        provider = LocalWeightsProvider(weights_path=non_existent)
+        provider._backend_type = "transformers"
+
+        calls = {"count": 0, "recovered": False}
+
+        def fake_infer(prompt):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise RuntimeError("CUDA out of memory. Tried to allocate 2.00 GiB")
+            return '{"phase": "ACTING", "decision": "read file", "tool_name": "file_read", "tool_params": {"path": "a.py"}, "is_finish": false}'
+
+        def fake_recover():
+            calls["recovered"] = True
+            return True
+
+        provider._run_inference = fake_infer  # type: ignore
+        provider._recover_from_oom = fake_recover  # type: ignore
+
+        plan = ExecutionPlan(goal="Test OOM recovery")
+        config = BatchAgentConfig(goal="Test OOM recovery", workspace_root=self.ws)
+        decision = provider.decide_next_step(config, plan, step_number=1, observation="Start")
+
+        self.assertTrue(calls["recovered"])
+        self.assertEqual(calls["count"], 2)
+        self.assertEqual(decision.tool_name, "file_read")
+        self.assertEqual(decision.tool_params, {"path": "a.py"})
+
 
 if __name__ == "__main__":
     unittest.main()

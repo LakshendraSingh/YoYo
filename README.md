@@ -234,8 +234,9 @@ The agent loads `plan.txt`, automatically installs local wheels from `./wheels/`
 
 ### 8. Direct Local Model Weights Connection (GGUF & Safetensors)
 YoYo can run fully offline on compute nodes by connecting directly to local model weights without APIs, network calls, or cloud subscriptions:
-- **GGUF Format**: Leverages local CPU or GPU offload (via llama.cpp / metal / CUDA).
-- **HuggingFace / Safetensors**: Direct weight loading from local disk paths.
+- **GGUF Format**: Leverages local CPU or GPU offload (via llama.cpp / metal / CUDA) with `--ctx-size` and `--n-gpu-layers` support.
+- **HuggingFace / Safetensors (Multi-GPU Sharding & KV-Cache Headroom)**: Automatically shards across all available GPUs (e.g. `4× H100 80GB`) using `device_map="auto"` with explicit per-GPU `max_memory` headroom (reserving 20% VRAM on GPU 0 and 12% on GPUs 1..N for KV cache & activations).
+- **Automatic VRAM OOM Recovery**: If CUDA/GPU OOM occurs during inference, YoYo clears `torch.cuda.empty_cache()`, reloads with 35% KV-cache headroom (or steps down `n_gpu_layers` for `llama.cpp`), and retries the call.
 - **CLI Options**: `--model-weights <PATH>`, `--device {auto,cuda,cpu,mps}`, `--gpu-layers <N>`, `--context-window <N>`.
 
 ```bash
@@ -645,7 +646,7 @@ timestamp,step,event_type,title,status,exit_code,duration_seconds,command,tokens
 
 ## 8. Verification & Comprehensive Test Suite
 
-YoYo is validated by a rigorous test suite of **64 unit and end-to-end integration tests** covering every functional subsystem:
+YoYo is validated by a rigorous test suite of **66 unit and end-to-end integration tests** covering every functional subsystem:
 
 1. **`test_sandbox.py`**: Workspace boundary confinement, symlink traversal prevention, sensitive directory/file read/write filtering, dangerous command blocking (`sudo`, fork bomb, `rm -rf /`), and environment variable secret scrubbing.
 2. **`test_process_tracker.py`**: Non-interactive `DEVNULL` stdin enforcement, process group isolation, active process tracking table, execution timeout killing, and emergency cleanups.
@@ -655,7 +656,7 @@ YoYo is validated by a rigorous test suite of **64 unit and end-to-end integrati
 6. **`test_cli.py`**: Command-line flag parsing, JSON manifest ingestion, workspace auto-detection, and batch return codes.
 7. **`test_checkpoint.py`**: Crash-resilient checkpointing (`.batch_checkpoint.json`), state persistence with synchronous `fsync`, and seamless resumption from prior checkpoints.
 8. **`test_offline_planner.py`**: 2-stage air-gapped workflow, autonomous environment survey, `plan.txt` generation with dependency rationale, `proposal/` code drafting, and Stage 2 execution.
-9. **`test_local_weights.py`**: Direct model weights connection, GGUF parameter validation, and AST symbol inspection tools.
+9. **`test_local_weights.py`**: Direct model weights connection, GGUF parameter validation, multi-GPU (`4× H100`) `max_memory` KV-cache headroom, and automatic CUDA OOM recovery/retry.
 10. **`test_goal_priority_and_replanning.py`**: Goal supremacy mandate, dynamic plan adaptation, inserted verification steps, and plan mutation recording.
 11. **`test_runaway_loop_and_recovery.py`**: Hard token budgets, infinite retry action circuit breakers, command failure diagnosis and self-healing recovery, dual CSV logging, and fully toggleable runaway loop defense mechanisms.
 12. **`test_document_ingestion.py`**: Pre-flight research paper ingestion (PDF, LaTeX, Markdown) and SRS requirements extraction.
@@ -666,7 +667,7 @@ YoYo is validated by a rigorous test suite of **64 unit and end-to-end integrati
 python3 -m unittest discover -s tests -v
 ```
 
-**Result**: **64 / 64 tests pass cleanly** in ~5 seconds with zero external dependencies.
+**Result**: **66 / 66 tests pass cleanly** in ~5.5 seconds with zero external dependencies.
 
 ### Live Scale Benchmark (300,038 LOC / 10,715 Files)
 ```bash
