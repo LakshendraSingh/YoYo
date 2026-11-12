@@ -443,7 +443,7 @@ class GeminiProvider(BaseProvider):
             f"- file_list: List files in workspace (params: {{'recursive': bool}})\n"
             f"- file_search: Regex search file contents (params: {{'pattern': str}})\n"
             f"- verify_test: Run tests/syntax check (params: {{'command': str or 'test_file': str}})\n"
-            f"- ast_inspect: Extract AST classes and methods from Python files (params: {{'path': str}})\n"
+            f"- ast_inspect: Extract AST classes, structs, methods, and functions from Python & C/C++ files (params: {{'path': str}})\n"
             f"- update_plan: Mutate execution plan (params: {{'action': 'add_step'|'remove_step'|'replan', ...}})\n\n"
             f"COMPLETION INSTRUCTION:\n"
             f"When the primary goal is completely accomplished and verified, set 'is_finish': true, 'tool_name': null, and 'finish_summary': 'Detailed accomplishment description'.\n\n"

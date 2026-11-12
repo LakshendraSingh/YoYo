@@ -14,6 +14,7 @@ from batch_agent.process.recovery import CommandRecoveryEngine, FailureCategory
 from batch_agent.process.runner import ProcessResult, ProcessRunner
 from batch_agent.process.tracker import ProcessTracker
 from batch_agent.sandbox.sandbox_manager import SandboxManager
+from batch_agent.tools.ast_tool import CodeASTInspectTool
 from batch_agent.tools.base import ToolContext
 from batch_agent.tools.filesystem import FileEditTool, FileListTool, FileSearchTool
 
@@ -149,6 +150,51 @@ class TestProductionReadiness(unittest.TestCase):
             attempt = CommandRecoveryEngine.attempt_recovery(cmd, res, ctx)
             self.assertFalse(attempt.success)
             self.assertIsNone(attempt.repaired_command)
+
+    def test_ast_inspect_supports_c_and_cpp(self):
+        cpp_path = os.path.join(self.ws, "engine.cpp")
+        cpp_code = """#include <vector>
+#include "analytics.hpp"
+
+// void fake_commented_func() {}
+/*
+class FakeCommentedClass {
+    int ghost() { return 0; }
+};
+*/
+
+struct MetricPoint {
+    double value;
+};
+
+class AnalyticsEngine {
+public:
+    AnalyticsEngine(int scale) {}
+    int multiply(int a, int b) const {
+        if (a == 0) return 0;
+        return a * b;
+    }
+    ~AnalyticsEngine() {}
+};
+
+int compute_sum(int x, int y) {
+    return x + y;
+}
+"""
+        with open(cpp_path, "w", encoding="utf-8") as f:
+            f.write(cpp_code)
+
+        res = CodeASTInspectTool().run({"path": "engine.cpp"}, self._make_context())
+        self.assertTrue(res.success, res.error)
+        self.assertIn("#include <vector>", res.output)
+        self.assertIn('#include "analytics.hpp"', res.output)
+        self.assertIn("struct MetricPoint:", res.output)
+        self.assertIn("class AnalyticsEngine:", res.output)
+        self.assertIn("int multiply(int a, int b)", res.output)
+        self.assertIn("int compute_sum(int x, int y)", res.output)
+        self.assertNotIn("fake_commented_func", res.output)
+        self.assertNotIn("FakeCommentedClass", res.output)
+        self.assertNotIn("if (", res.output)
 
 
 if __name__ == "__main__":
